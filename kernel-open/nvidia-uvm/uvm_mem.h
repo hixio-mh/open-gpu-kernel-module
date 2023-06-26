@@ -86,7 +86,7 @@
 // The size of the VA used for mapping uvm_mem_t allocations
 // 128 GBs should be plenty for internal allocations and fits easily on all
 // supported architectures.
-#define UVM_MEM_VA_SIZE (128ull * 1024 * 1024 * 1024)
+#define UVM_MEM_VA_SIZE (128 * UVM_SIZE_1GB)
 
 typedef struct
 {
@@ -128,6 +128,11 @@ typedef struct
     // has to be aligned to PAGE_SIZE.
     NvU32 page_size;
 
+    // The protection flag is only observed for vidmem allocations when CC is
+    // enabled. If set to true, the allocation returns unprotected vidmem;
+    // otherwise, the allocation returns protected vidmem.
+    bool is_unprotected;
+
     // If true, the allocation is zeroed (scrubbed).
     bool zero;
 } uvm_mem_alloc_params_t;
@@ -161,10 +166,9 @@ struct uvm_mem_struct
     // lifetime of the GPU. For CPU allocations there is no lifetime limitation.
     uvm_gpu_t *backing_gpu;
 
+    // For Confidential Computing, the accessing GPU needs to be known at alloc
+    // time for sysmem allocations.
     uvm_gpu_t *dma_owner;
-
-    // Size of the physical chunks.
-    NvU32 chunk_size;
 
     union
     {
@@ -194,11 +198,11 @@ struct uvm_mem_struct
     // Count of chunks (vidmem) or CPU pages (sysmem) above
     size_t chunks_count;
 
+    // Size of each physical chunk (vidmem) or CPU page (sysmem)
+    NvU32 chunk_size;
+
     // Size of the allocation
     NvU64 size;
-
-    // Size of the physical allocation backing
-    NvU64 physical_allocation_size;
 
     uvm_mem_user_mapping_t *user;
 
@@ -234,6 +238,20 @@ NV_STATUS uvm_mem_translate_gpu_attributes(const UvmGpuMappingAttributes *attrs,
                                            uvm_mem_gpu_mapping_attrs_t *attrs_out);
 
 uvm_chunk_sizes_mask_t uvm_mem_kernel_chunk_sizes(uvm_gpu_t *gpu);
+
+// Size of all the physical allocations backing the given memory.
+static inline NvU64 uvm_mem_physical_size(const uvm_mem_t *mem)
+{
+    NvU64 physical_size = mem->chunks_count * mem->chunk_size;
+
+    UVM_ASSERT(mem->size <= physical_size);
+
+    return physical_size;
+}
+
+// Returns true if the memory is physically contiguous in the
+// [offset, offset + size) interval.
+bool uvm_mem_is_physically_contiguous(uvm_mem_t *mem, NvU64 offset, NvU64 size);
 
 // Allocate memory according to the given allocation parameters.
 //
@@ -372,6 +390,12 @@ static NV_STATUS uvm_mem_alloc_vidmem(NvU64 size, uvm_gpu_t *gpu, uvm_mem_t **me
     params.page_size = UVM_PAGE_SIZE_DEFAULT;
 
     return uvm_mem_alloc(&params, mem_out);
+}
+
+// Helper for allocating protected vidmem with the default page size
+static NV_STATUS uvm_mem_alloc_vidmem_protected(NvU64 size, uvm_gpu_t *gpu, uvm_mem_t **mem_out)
+{
+    return uvm_mem_alloc_vidmem(size, gpu, mem_out);
 }
 
 // Helper for allocating sysmem and mapping it on the CPU

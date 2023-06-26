@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -44,7 +44,8 @@ typedef struct
     NvU64               timestamp;
     LOCK_TRACE_INFO     traceInfo;
     NvU64               tlsEntryId;
-
+    volatile NvU32      contentionCount;
+    NvU32               lowPriorityAging;
 } RMAPI_LOCK;
 
 RsServer          g_resServ;
@@ -99,6 +100,7 @@ rmapiInitialize
 
     listInit(&g_clientListBehindGpusLock, g_resServ.pAllocator);
     listInit(&g_userInfoList, g_resServ.pAllocator);
+    multimapInit(&g_osInfoList, g_resServ.pAllocator);
 
     secInfo.privLevel         = RS_PRIV_LEVEL_KERNEL;
     secInfo.paramLocation     = PARAM_LOCATION_KERNEL;
@@ -177,8 +179,8 @@ _rmapiInitInterface
     pRmApi->AllocWithHandle = rmapiAllocWithHandle;
     pRmApi->AllocWithSecInfo = pRmApi->bTlsInternal ? rmapiAllocWithSecInfo : rmapiAllocWithSecInfoTls;
 
-    pRmApi->FreeClientList = rmapiFreeClientList;
-    pRmApi->FreeClientListWithSecInfo = pRmApi->bTlsInternal ? rmapiFreeClientListWithSecInfo : rmapiFreeClientListWithSecInfoTls;
+    pRmApi->DisableClients = rmapiDisableClients;
+    pRmApi->DisableClientsWithSecInfo = pRmApi->bTlsInternal ? rmapiDisableClientsWithSecInfo : rmapiDisableClientsWithSecInfoTls;
 
     pRmApi->Free = rmapiFree;
     pRmApi->FreeWithSecInfo = pRmApi->bTlsInternal ? rmapiFreeWithSecInfo : rmapiFreeWithSecInfoTls;
@@ -215,6 +217,65 @@ rmapiGetInterface
     return &g_RmApiList[rmapiType];
 }
 
+static void
+_rmapiUnrefGpuAccessNeeded
+(
+    NvU32           gpuMask
+)
+{
+    NvU32           gpuInstance = 0;
+    OBJGPU         *pGpu = NULL;
+
+    while ((pGpu = gpumgrGetNextGpu(gpuMask, &gpuInstance)) != NULL)
+    {
+        osUnrefGpuAccessNeeded(pGpu->pOsGpuInfo);
+    }
+}
+
+static NV_STATUS
+_rmapiRefGpuAccessNeeded
+(
+    NvU32          *pGpuMask
+)
+{
+    NV_STATUS       status = NV_OK;
+    NvU32           mask = 0;
+    NvU32           gpuInstance = 0;
+    OBJGPU         *pGpu = NULL;
+
+    status = gpumgrGetGpuAttachInfo(NULL, &mask);
+    if (status != NV_OK)
+    {
+        return status;
+    }
+
+    while ((pGpu = gpumgrGetNextGpu(mask, &gpuInstance)) != NULL)
+    {
+        status = osRefGpuAccessNeeded(pGpu->pOsGpuInfo);
+        if (status != NV_OK)
+        {
+            goto unref;
+        }
+
+       /*
+        *_rmapiRefGpuAccessNeeded records the gpuMask
+        * during ref up and this is used to unref exact same
+        * GPUs in _rmapiUnrefGpuAccessNeeded. This is done
+        * to protect against obtaining incorrect pGpu if the mask
+        * changes due to a RM_API called between ref/unref
+        * sequence.
+        */
+        *pGpuMask |= (1 << pGpu->gpuInstance);
+    }
+
+unref:
+    if (status != NV_OK)
+    {
+        _rmapiUnrefGpuAccessNeeded(*pGpuMask);
+    }
+    return status;
+}
+
 NV_STATUS
 rmapiPrologue
 (
@@ -223,6 +284,49 @@ rmapiPrologue
 )
 {
     NV_STATUS       status = NV_OK;
+    NvBool          bApiLockTaken = NV_FALSE;
+    NvU32           mask;
+
+    NV_ASSERT_OR_RETURN(pRmApi != NULL, NV_ERR_INVALID_ARGUMENT);
+    NV_ASSERT_OR_RETURN(pContext != NULL, NV_ERR_INVALID_ARGUMENT);
+
+    /*
+     * Check for external clients. This condition is checked here
+     * in order to avoid a check at all caller sites of
+     * rmapiPrologue. Effectively rmapiprologue is a no-op for
+     * internal clients.
+     */
+    if (!pRmApi->bTlsInternal)
+    {
+        mask = osGetDynamicPowerSupportMask();
+        if (!mask)
+            return status;
+       /*
+        * NOTE1: Callers of rmapiPro{Epi}logue function call may call
+        * it with or without API lock taken. Hence, we check here
+        * whether API lock has been taken. We take API lock if
+        * it not taken already.
+        * We obtain the pGPU by using the gpuMask in
+        * _rmapiRef{Unref}GpuAccessNeeded. This needs API lock to be
+        * safe against init/teardown of GPUs while we ref/unref
+        * the GPUs. We release the lock after we have finished
+        * with ref/unref, if we had taken it.
+        */
+       if (!rmapiLockIsOwner())
+       {
+           status = rmapiLockAcquire(RMAPI_LOCK_FLAGS_READ, RM_LOCK_MODULES_CLIENT);
+           if (status != NV_OK)
+           {
+               return status;
+           }
+           bApiLockTaken = NV_TRUE;
+       }
+       status = _rmapiRefGpuAccessNeeded(&pContext->gpuMask);
+       if (bApiLockTaken == NV_TRUE)
+       {
+           rmapiLockRelease();
+       }
+    }
     return status;
 }
 
@@ -233,6 +337,43 @@ rmapiEpilogue
     RM_API_CONTEXT *pContext
 )
 {
+    NV_STATUS       status = NV_OK;
+    NvBool          bApiLockTaken = NV_FALSE;
+    NvU32           mask;
+
+    NV_ASSERT_OR_RETURN_VOID(pRmApi != NULL);
+    NV_ASSERT_OR_RETURN_VOID(pContext != NULL);
+
+    /*
+     * Check for external clients. This condition is checked here
+     * in order to avoid a check at all caller sites of
+     * rmapiEpilogue. Effectively rmapiEpilogue is a no-op for
+     * internal clients.
+     */
+    if (!pRmApi->bTlsInternal)
+    {
+        mask = osGetDynamicPowerSupportMask();
+        if (!mask)
+            return;
+
+       /* Please see NOTE1 */
+       if (!rmapiLockIsOwner())
+       {
+           status = rmapiLockAcquire(RMAPI_LOCK_FLAGS_READ, RM_LOCK_MODULES_CLIENT);
+           if (status != NV_OK)
+           {
+               return;
+           }
+           bApiLockTaken = NV_TRUE;
+       }
+
+       _rmapiUnrefGpuAccessNeeded(pContext->gpuMask);
+
+       if (bApiLockTaken == NV_TRUE)
+       {
+           rmapiLockRelease();
+       }
+    }
 }
 
 void
@@ -290,6 +431,14 @@ _rmapiLockAlloc(void)
     g_resServ.bUnlockedParamCopy = NV_TRUE;
 
     NvU32 val = 0;
+
+    if ((osReadRegistryDword(NULL,
+                            NV_REG_STR_RM_LOCKING_LOW_PRIORITY_AGING,
+                            &val) == NV_OK))
+    {
+        g_RmApiLock.lowPriorityAging = val;
+    }
+
     if ((osReadRegistryDword(NULL,
                             NV_REG_STR_RM_PARAM_COPY_NO_LOCK,
                             &val) == NV_OK))
@@ -355,6 +504,7 @@ rmapiLockAcquire(NvU32 flags, NvU32 module)
         }
         else
         {
+            // Conditional acquires don't care about contention or priority
             if (portSyncRwLockAcquireWriteConditional(g_RmApiLock.pLock))
             {
                 g_RmApiLock.threadId = threadId;
@@ -374,7 +524,23 @@ rmapiLockAcquire(NvU32 flags, NvU32 module)
         else
         {
 
-            portSyncRwLockAcquireWrite(g_RmApiLock.pLock);
+            if (flags & RMAPI_LOCK_FLAGS_LOW_PRIORITY)
+            {
+                NvS32 age = g_RmApiLock.lowPriorityAging;
+                portSyncRwLockAcquireWrite(g_RmApiLock.pLock);
+                while ((g_RmApiLock.contentionCount > 0) && (age--))
+                {
+                    portSyncRwLockReleaseWrite(g_RmApiLock.pLock);
+                    osDelay(10);
+                    portSyncRwLockAcquireWrite(g_RmApiLock.pLock);
+                }
+            }
+            else
+            {
+                portAtomicIncrementU32(&g_RmApiLock.contentionCount);
+                portSyncRwLockAcquireWrite(g_RmApiLock.pLock);
+                portAtomicDecrementU32(&g_RmApiLock.contentionCount);
+            }
             g_RmApiLock.threadId = threadId;
         }
     }
@@ -636,6 +802,8 @@ rmapiDelPendingClients
     }
 }
 
+extern OsInfoMap g_osInfoList;
+
 NV_STATUS
 rmapiGetClientHandlesFromOSInfo
 (
@@ -644,6 +812,8 @@ rmapiGetClientHandlesFromOSInfo
     NvU32     *pClientHandleListSize
 )
 {
+    OBJSYS *pSys = SYS_GET_INSTANCE();
+
     NvHandle   *pClientHandleList;
     NvU32       clientHandleListSize = 0;
     NvU32       k;
@@ -653,53 +823,97 @@ rmapiGetClientHandlesFromOSInfo
     RmClient  *pClient;
     RsClient  *pRsClient;
 
-    ppFirstClient = NULL;
-    for (ppClient = serverutilGetFirstClientUnderLock();
-         ppClient;
-         ppClient = serverutilGetNextClientUnderLock(ppClient))
+    NvBool clientHandleLookup = pSys->getProperty(pSys, PDB_PROP_SYS_CLIENT_HANDLE_LOOKUP);
+
+    if (!clientHandleLookup)
     {
-        pClient = *ppClient;
-        if (pClient->pOSInfo != pOSInfo)
+        ppFirstClient = NULL;
+        for (ppClient = serverutilGetFirstClientUnderLock();
+            ppClient;
+            ppClient = serverutilGetNextClientUnderLock(ppClient))
         {
-            continue;
+            pClient = *ppClient;
+            if (pClient->pOSInfo != pOSInfo)
+            {
+                continue;
+            }
+            clientHandleListSize++;
+
+            if (NULL == ppFirstClient)
+                ppFirstClient = ppClient;
         }
-        clientHandleListSize++;
 
-        if (NULL == ppFirstClient)
-            ppFirstClient = ppClient;
-    }
-
-    if (clientHandleListSize == 0)
-    {
-        *pClientHandleListSize = 0;
-        *ppClientHandleList = NULL;
-        return NV_ERR_INVALID_ARGUMENT;
-    }
-
-    pClientHandleList = portMemAllocNonPaged(clientHandleListSize * sizeof(NvU32));
-    if (pClientHandleList == NULL)
-    {
-        return NV_ERR_NO_MEMORY;
-    }
-
-    *pClientHandleListSize = clientHandleListSize;
-    *ppClientHandleList = pClientHandleList;
-
-    k = 0;
-    for (ppClient = ppFirstClient;
-         ppClient;
-         ppClient = serverutilGetNextClientUnderLock(ppClient))
-    {
-        pClient = *ppClient;
-        pRsClient = staticCast(pClient, RsClient);
-        if (pClient->pOSInfo != pOSInfo)
+        if (clientHandleListSize == 0)
         {
-            continue;
+            *pClientHandleListSize = 0;
+            *ppClientHandleList = NULL;
+            return NV_ERR_INVALID_ARGUMENT;
         }
-        pClientHandleList[k++] = pRsClient->hClient;
 
-        if (clientHandleListSize <= k)
-            break;
+        pClientHandleList = portMemAllocNonPaged(clientHandleListSize * sizeof(NvU32));
+        if (pClientHandleList == NULL)
+        {
+            return NV_ERR_NO_MEMORY;
+        }
+
+        *pClientHandleListSize = clientHandleListSize;
+        *ppClientHandleList = pClientHandleList;
+
+        k = 0;
+        for (ppClient = ppFirstClient;
+            ppClient;
+            ppClient = serverutilGetNextClientUnderLock(ppClient))
+        {
+            pClient = *ppClient;
+            pRsClient = staticCast(pClient, RsClient);
+            if (pClient->pOSInfo != pOSInfo)
+            {
+                continue;
+            }
+            pClientHandleList[k++] = pRsClient->hClient;
+
+            if (clientHandleListSize <= k)
+                break;
+        }
+    }
+    else
+    {
+        OsInfoMapSubmap *pSubmap = NULL;
+        OsInfoMapIter it;
+        NvU64 key1 = (NvUPtr)pOSInfo;
+        pSubmap = multimapFindSubmap(&g_osInfoList, key1);
+        if (pSubmap != NULL)
+        {
+            clientHandleListSize = multimapCountSubmapItems(&g_osInfoList, pSubmap);
+            NV_PRINTF(LEVEL_INFO, "*** Found %d clients for %llx\n", clientHandleListSize, key1);
+        }
+        if (clientHandleListSize == 0)
+        {
+            *pClientHandleListSize = 0;
+            *ppClientHandleList = NULL;
+            return NV_ERR_INVALID_ARGUMENT;
+        }
+        pClientHandleList = portMemAllocNonPaged(clientHandleListSize * sizeof(NvU32));
+        if (pClientHandleList == NULL)
+        {
+            return NV_ERR_NO_MEMORY;
+        }
+        *pClientHandleListSize = clientHandleListSize;
+        *ppClientHandleList = pClientHandleList;
+        k = 0;
+        it = multimapSubmapIterItems(&g_osInfoList, pSubmap);
+        while(multimapItemIterNext(&it))
+        {
+            pClient = *it.pValue;
+            pRsClient = staticCast(pClient, RsClient);
+
+            NV_CHECK_OR_ELSE_STR(LEVEL_ERROR, pClient->pOSInfo == pOSInfo, "*** OS info mismatch", continue);
+
+            pClientHandleList[k++] = pRsClient->hClient;
+            NV_PRINTF(LEVEL_INFO, "*** Found: %x\n", pRsClient->hClient);
+            if (clientHandleListSize <= k)
+                break;
+        }
     }
 
     return NV_OK;

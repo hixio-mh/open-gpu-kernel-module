@@ -23,10 +23,10 @@ extern const struct NVOC_CLASS_DEF __nvoc_class_def_RmResource;
 
 extern const struct NVOC_CLASS_DEF __nvoc_class_def_Memory;
 
-void __nvoc_init_UserModeApi(UserModeApi*, RmHalspecOwner* );
-void __nvoc_init_funcTable_UserModeApi(UserModeApi*, RmHalspecOwner* );
-NV_STATUS __nvoc_ctor_UserModeApi(UserModeApi*, RmHalspecOwner* , CALL_CONTEXT * arg_pCallContext, struct RS_RES_ALLOC_PARAMS_INTERNAL * arg_pParams);
-void __nvoc_init_dataField_UserModeApi(UserModeApi*, RmHalspecOwner* );
+void __nvoc_init_UserModeApi(UserModeApi*);
+void __nvoc_init_funcTable_UserModeApi(UserModeApi*);
+NV_STATUS __nvoc_ctor_UserModeApi(UserModeApi*, CALL_CONTEXT * arg_pCallContext, struct RS_RES_ALLOC_PARAMS_INTERNAL * arg_pParams);
+void __nvoc_init_dataField_UserModeApi(UserModeApi*);
 void __nvoc_dtor_UserModeApi(UserModeApi*);
 extern const struct NVOC_EXPORT_INFO __nvoc_export_info_UserModeApi;
 
@@ -101,6 +101,46 @@ static NV_STATUS __nvoc_thunk_Memory_usrmodeCheckMemInterUnmap(struct UserModeAp
     return memCheckMemInterUnmap((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), bSubdeviceHandleProvided);
 }
 
+static NvBool __nvoc_thunk_RmResource_usrmodeShareCallback(struct UserModeApi *pResource, struct RsClient *pInvokingClient, struct RsResourceRef *pParentRef, RS_SHARE_POLICY *pSharePolicy) {
+    return rmresShareCallback((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pInvokingClient, pParentRef, pSharePolicy);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_usrmodeMapTo(struct UserModeApi *pResource, RS_RES_MAP_TO_PARAMS *pParams) {
+    return resMapTo((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pParams);
+}
+
+static NV_STATUS __nvoc_thunk_Memory_usrmodeGetMapAddrSpace(struct UserModeApi *pMemory, CALL_CONTEXT *pCallContext, NvU32 mapFlags, NV_ADDRESS_SPACE *pAddrSpace) {
+    return memGetMapAddrSpace((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pCallContext, mapFlags, pAddrSpace);
+}
+
+static NvU32 __nvoc_thunk_RsResource_usrmodeGetRefCount(struct UserModeApi *pResource) {
+    return resGetRefCount((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset));
+}
+
+static void __nvoc_thunk_RsResource_usrmodeAddAdditionalDependants(struct RsClient *pClient, struct UserModeApi *pResource, RsResourceRef *pReference) {
+    resAddAdditionalDependants(pClient, (struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pReference);
+}
+
+static NV_STATUS __nvoc_thunk_RmResource_usrmodeControl_Prologue(struct UserModeApi *pResource, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    return rmresControl_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pCallContext, pParams);
+}
+
+static NvBool __nvoc_thunk_Memory_usrmodeIsGpuMapAllowed(struct UserModeApi *pMemory, struct OBJGPU *pGpu) {
+    return memIsGpuMapAllowed((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pGpu);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_usrmodeUnmapFrom(struct UserModeApi *pResource, RS_RES_UNMAP_FROM_PARAMS *pParams) {
+    return resUnmapFrom((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pParams);
+}
+
+static void __nvoc_thunk_RmResource_usrmodeControl_Epilogue(struct UserModeApi *pResource, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    rmresControl_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pCallContext, pParams);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_usrmodeControlLookup(struct UserModeApi *pResource, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams, const struct NVOC_EXPORTED_METHOD_DEF **ppEntry) {
+    return resControlLookup((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pParams, ppEntry);
+}
+
 static NV_STATUS __nvoc_thunk_Memory_usrmodeControl(struct UserModeApi *pMemory, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
     return memControl((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pCallContext, pParams);
 }
@@ -117,44 +157,20 @@ static NV_STATUS __nvoc_thunk_Memory_usrmodeGetMemoryMappingDescriptor(struct Us
     return memGetMemoryMappingDescriptor((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), ppMemDesc);
 }
 
-static NV_STATUS __nvoc_thunk_Memory_usrmodeGetMapAddrSpace(struct UserModeApi *pMemory, CALL_CONTEXT *pCallContext, NvU32 mapFlags, NV_ADDRESS_SPACE *pAddrSpace) {
-    return memGetMapAddrSpace((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pCallContext, mapFlags, pAddrSpace);
-}
-
-static NvBool __nvoc_thunk_RmResource_usrmodeShareCallback(struct UserModeApi *pResource, struct RsClient *pInvokingClient, struct RsResourceRef *pParentRef, RS_SHARE_POLICY *pSharePolicy) {
-    return rmresShareCallback((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pInvokingClient, pParentRef, pSharePolicy);
-}
-
 static NV_STATUS __nvoc_thunk_RsResource_usrmodeControlFilter(struct UserModeApi *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
     return resControlFilter((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pCallContext, pParams);
 }
 
-static void __nvoc_thunk_RsResource_usrmodeAddAdditionalDependants(struct RsClient *pClient, struct UserModeApi *pResource, RsResourceRef *pReference) {
-    resAddAdditionalDependants(pClient, (struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pReference);
-}
-
-static NvU32 __nvoc_thunk_RsResource_usrmodeGetRefCount(struct UserModeApi *pResource) {
-    return resGetRefCount((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset));
-}
-
-static NV_STATUS __nvoc_thunk_RsResource_usrmodeMapTo(struct UserModeApi *pResource, RS_RES_MAP_TO_PARAMS *pParams) {
-    return resMapTo((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pParams);
-}
-
-static NV_STATUS __nvoc_thunk_RmResource_usrmodeControl_Prologue(struct UserModeApi *pResource, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
-    return rmresControl_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pCallContext, pParams);
-}
-
-static NvBool __nvoc_thunk_Memory_usrmodeIsGpuMapAllowed(struct UserModeApi *pMemory, struct OBJGPU *pGpu) {
-    return memIsGpuMapAllowed((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pGpu);
+static NV_STATUS __nvoc_thunk_RmResource_usrmodeControlSerialization_Prologue(struct UserModeApi *pResource, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    return rmresControlSerialization_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pCallContext, pParams);
 }
 
 static NV_STATUS __nvoc_thunk_Memory_usrmodeIsReady(struct UserModeApi *pMemory, NvBool bCopyConstructorContext) {
     return memIsReady((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), bCopyConstructorContext);
 }
 
-static NV_STATUS __nvoc_thunk_Memory_usrmodeCheckCopyPermissions(struct UserModeApi *pMemory, struct OBJGPU *pDstGpu, NvHandle hDstClientNvBool) {
-    return memCheckCopyPermissions((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pDstGpu, hDstClientNvBool);
+static NV_STATUS __nvoc_thunk_Memory_usrmodeCheckCopyPermissions(struct UserModeApi *pMemory, struct OBJGPU *pDstGpu, struct Device *pDstDevice) {
+    return memCheckCopyPermissions((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), pDstGpu, pDstDevice);
 }
 
 static void __nvoc_thunk_RsResource_usrmodePreDestruct(struct UserModeApi *pResource) {
@@ -165,16 +181,8 @@ static NV_STATUS __nvoc_thunk_Memory_usrmodeIsDuplicate(struct UserModeApi *pMem
     return memIsDuplicate((struct Memory *)(((unsigned char *)pMemory) + __nvoc_rtti_UserModeApi_Memory.offset), hMemory, pDuplicate);
 }
 
-static NV_STATUS __nvoc_thunk_RsResource_usrmodeUnmapFrom(struct UserModeApi *pResource, RS_RES_UNMAP_FROM_PARAMS *pParams) {
-    return resUnmapFrom((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pParams);
-}
-
-static void __nvoc_thunk_RmResource_usrmodeControl_Epilogue(struct UserModeApi *pResource, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
-    rmresControl_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pCallContext, pParams);
-}
-
-static NV_STATUS __nvoc_thunk_RsResource_usrmodeControlLookup(struct UserModeApi *pResource, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams, const struct NVOC_EXPORTED_METHOD_DEF **ppEntry) {
-    return resControlLookup((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RsResource.offset), pParams, ppEntry);
+static void __nvoc_thunk_RmResource_usrmodeControlSerialization_Epilogue(struct UserModeApi *pResource, CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    rmresControlSerialization_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_UserModeApi_RmResource.offset), pCallContext, pParams);
 }
 
 static NV_STATUS __nvoc_thunk_Memory_usrmodeMap(struct UserModeApi *pMemory, CALL_CONTEXT *pCallContext, struct RS_CPU_MAP_PARAMS *pParams, RsCpuMapping *pCpuMapping) {
@@ -197,21 +205,16 @@ void __nvoc_dtor_UserModeApi(UserModeApi *pThis) {
     PORT_UNREFERENCED_VARIABLE(pThis);
 }
 
-void __nvoc_init_dataField_UserModeApi(UserModeApi *pThis, RmHalspecOwner *pRmhalspecowner) {
-    ChipHal *chipHal = &pRmhalspecowner->chipHal;
-    const unsigned long chipHal_HalVarIdx = (unsigned long)chipHal->__nvoc_HalVarIdx;
+void __nvoc_init_dataField_UserModeApi(UserModeApi *pThis) {
     PORT_UNREFERENCED_VARIABLE(pThis);
-    PORT_UNREFERENCED_VARIABLE(pRmhalspecowner);
-    PORT_UNREFERENCED_VARIABLE(chipHal);
-    PORT_UNREFERENCED_VARIABLE(chipHal_HalVarIdx);
 }
 
 NV_STATUS __nvoc_ctor_Memory(Memory* , CALL_CONTEXT *, struct RS_RES_ALLOC_PARAMS_INTERNAL *);
-NV_STATUS __nvoc_ctor_UserModeApi(UserModeApi *pThis, RmHalspecOwner *pRmhalspecowner, CALL_CONTEXT * arg_pCallContext, struct RS_RES_ALLOC_PARAMS_INTERNAL * arg_pParams) {
+NV_STATUS __nvoc_ctor_UserModeApi(UserModeApi *pThis, CALL_CONTEXT * arg_pCallContext, struct RS_RES_ALLOC_PARAMS_INTERNAL * arg_pParams) {
     NV_STATUS status = NV_OK;
     status = __nvoc_ctor_Memory(&pThis->__nvoc_base_Memory, arg_pCallContext, arg_pParams);
     if (status != NV_OK) goto __nvoc_ctor_UserModeApi_fail_Memory;
-    __nvoc_init_dataField_UserModeApi(pThis, pRmhalspecowner);
+    __nvoc_init_dataField_UserModeApi(pThis);
 
     status = __nvoc_usrmodeConstruct(pThis, arg_pCallContext, arg_pParams);
     if (status != NV_OK) goto __nvoc_ctor_UserModeApi_fail__init;
@@ -225,29 +228,34 @@ __nvoc_ctor_UserModeApi_exit:
     return status;
 }
 
-static void __nvoc_init_funcTable_UserModeApi_1(UserModeApi *pThis, RmHalspecOwner *pRmhalspecowner) {
-    ChipHal *chipHal = &pRmhalspecowner->chipHal;
-    const unsigned long chipHal_HalVarIdx = (unsigned long)chipHal->__nvoc_HalVarIdx;
+static void __nvoc_init_funcTable_UserModeApi_1(UserModeApi *pThis) {
     PORT_UNREFERENCED_VARIABLE(pThis);
-    PORT_UNREFERENCED_VARIABLE(pRmhalspecowner);
-    PORT_UNREFERENCED_VARIABLE(chipHal);
-    PORT_UNREFERENCED_VARIABLE(chipHal_HalVarIdx);
-
-    // Hal function -- usrmodeConstructHal
-    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-    {
-        pThis->__usrmodeConstructHal__ = &usrmodeConstructHal_GV100;
-    }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
-    {
-        pThis->__usrmodeConstructHal__ = &usrmodeConstructHal_GH100;
-    }
 
     pThis->__usrmodeCanCopy__ = &usrmodeCanCopy_IMPL;
 
     pThis->__nvoc_base_Memory.__nvoc_base_RmResource.__nvoc_base_RsResource.__resCanCopy__ = &__nvoc_thunk_UserModeApi_resCanCopy;
 
     pThis->__usrmodeCheckMemInterUnmap__ = &__nvoc_thunk_Memory_usrmodeCheckMemInterUnmap;
+
+    pThis->__usrmodeShareCallback__ = &__nvoc_thunk_RmResource_usrmodeShareCallback;
+
+    pThis->__usrmodeMapTo__ = &__nvoc_thunk_RsResource_usrmodeMapTo;
+
+    pThis->__usrmodeGetMapAddrSpace__ = &__nvoc_thunk_Memory_usrmodeGetMapAddrSpace;
+
+    pThis->__usrmodeGetRefCount__ = &__nvoc_thunk_RsResource_usrmodeGetRefCount;
+
+    pThis->__usrmodeAddAdditionalDependants__ = &__nvoc_thunk_RsResource_usrmodeAddAdditionalDependants;
+
+    pThis->__usrmodeControl_Prologue__ = &__nvoc_thunk_RmResource_usrmodeControl_Prologue;
+
+    pThis->__usrmodeIsGpuMapAllowed__ = &__nvoc_thunk_Memory_usrmodeIsGpuMapAllowed;
+
+    pThis->__usrmodeUnmapFrom__ = &__nvoc_thunk_RsResource_usrmodeUnmapFrom;
+
+    pThis->__usrmodeControl_Epilogue__ = &__nvoc_thunk_RmResource_usrmodeControl_Epilogue;
+
+    pThis->__usrmodeControlLookup__ = &__nvoc_thunk_RsResource_usrmodeControlLookup;
 
     pThis->__usrmodeControl__ = &__nvoc_thunk_Memory_usrmodeControl;
 
@@ -257,21 +265,9 @@ static void __nvoc_init_funcTable_UserModeApi_1(UserModeApi *pThis, RmHalspecOwn
 
     pThis->__usrmodeGetMemoryMappingDescriptor__ = &__nvoc_thunk_Memory_usrmodeGetMemoryMappingDescriptor;
 
-    pThis->__usrmodeGetMapAddrSpace__ = &__nvoc_thunk_Memory_usrmodeGetMapAddrSpace;
-
-    pThis->__usrmodeShareCallback__ = &__nvoc_thunk_RmResource_usrmodeShareCallback;
-
     pThis->__usrmodeControlFilter__ = &__nvoc_thunk_RsResource_usrmodeControlFilter;
 
-    pThis->__usrmodeAddAdditionalDependants__ = &__nvoc_thunk_RsResource_usrmodeAddAdditionalDependants;
-
-    pThis->__usrmodeGetRefCount__ = &__nvoc_thunk_RsResource_usrmodeGetRefCount;
-
-    pThis->__usrmodeMapTo__ = &__nvoc_thunk_RsResource_usrmodeMapTo;
-
-    pThis->__usrmodeControl_Prologue__ = &__nvoc_thunk_RmResource_usrmodeControl_Prologue;
-
-    pThis->__usrmodeIsGpuMapAllowed__ = &__nvoc_thunk_Memory_usrmodeIsGpuMapAllowed;
+    pThis->__usrmodeControlSerialization_Prologue__ = &__nvoc_thunk_RmResource_usrmodeControlSerialization_Prologue;
 
     pThis->__usrmodeIsReady__ = &__nvoc_thunk_Memory_usrmodeIsReady;
 
@@ -281,23 +277,19 @@ static void __nvoc_init_funcTable_UserModeApi_1(UserModeApi *pThis, RmHalspecOwn
 
     pThis->__usrmodeIsDuplicate__ = &__nvoc_thunk_Memory_usrmodeIsDuplicate;
 
-    pThis->__usrmodeUnmapFrom__ = &__nvoc_thunk_RsResource_usrmodeUnmapFrom;
-
-    pThis->__usrmodeControl_Epilogue__ = &__nvoc_thunk_RmResource_usrmodeControl_Epilogue;
-
-    pThis->__usrmodeControlLookup__ = &__nvoc_thunk_RsResource_usrmodeControlLookup;
+    pThis->__usrmodeControlSerialization_Epilogue__ = &__nvoc_thunk_RmResource_usrmodeControlSerialization_Epilogue;
 
     pThis->__usrmodeMap__ = &__nvoc_thunk_Memory_usrmodeMap;
 
     pThis->__usrmodeAccessCallback__ = &__nvoc_thunk_RmResource_usrmodeAccessCallback;
 }
 
-void __nvoc_init_funcTable_UserModeApi(UserModeApi *pThis, RmHalspecOwner *pRmhalspecowner) {
-    __nvoc_init_funcTable_UserModeApi_1(pThis, pRmhalspecowner);
+void __nvoc_init_funcTable_UserModeApi(UserModeApi *pThis) {
+    __nvoc_init_funcTable_UserModeApi_1(pThis);
 }
 
 void __nvoc_init_Memory(Memory*);
-void __nvoc_init_UserModeApi(UserModeApi *pThis, RmHalspecOwner *pRmhalspecowner) {
+void __nvoc_init_UserModeApi(UserModeApi *pThis) {
     pThis->__nvoc_pbase_UserModeApi = pThis;
     pThis->__nvoc_pbase_Object = &pThis->__nvoc_base_Memory.__nvoc_base_RmResource.__nvoc_base_RsResource.__nvoc_base_Object;
     pThis->__nvoc_pbase_RsResource = &pThis->__nvoc_base_Memory.__nvoc_base_RmResource.__nvoc_base_RsResource;
@@ -305,21 +297,23 @@ void __nvoc_init_UserModeApi(UserModeApi *pThis, RmHalspecOwner *pRmhalspecowner
     pThis->__nvoc_pbase_RmResource = &pThis->__nvoc_base_Memory.__nvoc_base_RmResource;
     pThis->__nvoc_pbase_Memory = &pThis->__nvoc_base_Memory;
     __nvoc_init_Memory(&pThis->__nvoc_base_Memory);
-    __nvoc_init_funcTable_UserModeApi(pThis, pRmhalspecowner);
+    __nvoc_init_funcTable_UserModeApi(pThis);
 }
 
 NV_STATUS __nvoc_objCreate_UserModeApi(UserModeApi **ppThis, Dynamic *pParent, NvU32 createFlags, CALL_CONTEXT * arg_pCallContext, struct RS_RES_ALLOC_PARAMS_INTERNAL * arg_pParams) {
     NV_STATUS status;
     Object *pParentObj;
     UserModeApi *pThis;
-    RmHalspecOwner *pRmhalspecowner;
 
-    pThis = portMemAllocNonPaged(sizeof(UserModeApi));
-    if (pThis == NULL) return NV_ERR_NO_MEMORY;
+    status = __nvoc_handleObjCreateMemAlloc(createFlags, sizeof(UserModeApi), (void**)&pThis, (void**)ppThis);
+    if (status != NV_OK)
+        return status;
 
     portMemSet(pThis, 0, sizeof(UserModeApi));
 
     __nvoc_initRtti(staticCast(pThis, Dynamic), &__nvoc_class_def_UserModeApi);
+
+    pThis->__nvoc_base_Memory.__nvoc_base_RmResource.__nvoc_base_RsResource.__nvoc_base_Object.createFlags = createFlags;
 
     if (pParent != NULL && !(createFlags & NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY))
     {
@@ -331,20 +325,22 @@ NV_STATUS __nvoc_objCreate_UserModeApi(UserModeApi **ppThis, Dynamic *pParent, N
         pThis->__nvoc_base_Memory.__nvoc_base_RmResource.__nvoc_base_RsResource.__nvoc_base_Object.pParent = NULL;
     }
 
-    if ((pRmhalspecowner = dynamicCast(pParent, RmHalspecOwner)) == NULL)
-        pRmhalspecowner = objFindAncestorOfType(RmHalspecOwner, pParent);
-    NV_ASSERT_OR_RETURN(pRmhalspecowner != NULL, NV_ERR_INVALID_ARGUMENT);
-
-    __nvoc_init_UserModeApi(pThis, pRmhalspecowner);
-    status = __nvoc_ctor_UserModeApi(pThis, pRmhalspecowner, arg_pCallContext, arg_pParams);
+    __nvoc_init_UserModeApi(pThis);
+    status = __nvoc_ctor_UserModeApi(pThis, arg_pCallContext, arg_pParams);
     if (status != NV_OK) goto __nvoc_objCreate_UserModeApi_cleanup;
 
     *ppThis = pThis;
+
     return NV_OK;
 
 __nvoc_objCreate_UserModeApi_cleanup:
     // do not call destructors here since the constructor already called them
-    portMemFree(pThis);
+    if (createFlags & NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT)
+        portMemSet(pThis, 0, sizeof(UserModeApi));
+    else
+        portMemFree(pThis);
+
+    // coverity[leaked_storage:FALSE]
     return status;
 }
 

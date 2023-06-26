@@ -40,17 +40,31 @@
 #include "nv_stdarg.h"
 
 enum NvKmsSyncPtOp {
+    /*
+     * Call into Tegra's kernel nvhost driver, and allocate a syncpoint that can
+     * be exclusively used by the caller. Internally, this operation will call
+     * get() to set the initial refcount of the syncpoint to 1.
+     */
     NVKMS_SYNCPT_OP_ALLOC,
-    NVKMS_SYNCPT_OP_GET,
+    /*
+     * Decrease the refcount of an already allocated syncpoint. Once the
+     * refcount drops to 0, the syncpoint will be returned to the free pool that
+     * nvhost manages, so PUT can also be used to balance out an ALLOC.
+     */
     NVKMS_SYNCPT_OP_PUT,
-    NVKMS_SYNCPT_OP_INCR_MAX,
-    NVKMS_SYNCPT_OP_CPU_INCR,
+    /*
+     * Extract syncpt id and thresh from the sync-file file descriptor
+     */
     NVKMS_SYNCPT_OP_FD_TO_ID_AND_THRESH,
+    /*
+     * Create dma-fence from syncpt id and thresh value and create sync_file
+     * file descriptor for the dma-fence handle created.
+     */
     NVKMS_SYNCPT_OP_ID_AND_THRESH_TO_FD,
+    /*
+     * read syncpt minimum value of given syncpt
+     */
     NVKMS_SYNCPT_OP_READ_MINVAL,
-    NVKMS_SYNCPT_OP_READ_MAXVAL,
-    NVKMS_SYNCPT_OP_SET_MIN_EQ_MAX,
-    NVKMS_SYNCPT_OP_SET_MAXVAL,
 };
 
 typedef struct {
@@ -62,21 +76,7 @@ typedef struct {
 
     struct {
         NvU32 id;                       /*  in   */
-    } get;
-
-    struct {
-        NvU32 id;                       /*  in   */
     } put;
-
-    struct {
-        NvU32 id;                       /*  in   */
-        NvU32 incr;                     /*  in   */
-        NvU32 value;                    /*  out  */
-    } incr_max;
-
-    struct {
-        NvU32 id;                       /*  in   */
-    } cpu_incr;
 
     struct {
         NvS32 fd;                       /*  in   */
@@ -94,20 +94,6 @@ typedef struct {
         NvU32 id;                       /*  in   */
         NvU32 minval;                   /*  out  */
     } read_minval;
-
-    struct {
-        NvU32 id;                       /*  in   */
-        NvU32 maxval;                   /*  out  */
-    } read_maxval;
-
-    struct {
-        NvU32 id;                       /*  in   */
-    } set_min_eq_max;
-
-    struct {
-        NvU32 id;                       /*  in   */
-        NvU32 val;                      /*  in   */
-    } set_maxval;
 } NvKmsSyncPtOpParams;
 
 NvBool nvkms_output_rounding_fix(void);

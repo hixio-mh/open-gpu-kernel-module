@@ -358,13 +358,13 @@ _getRemappedDsmSubfunction
     // Use NV_ASSERT_OR_ELSE_STR for embedded %.
     //
     NV_ASSERT_OR_ELSE_STR(
-        !(NV_ARRAY_ELEMENTS32(genDsmSubFuncRemapTable) % (ACPI_DSM_FUNCTION_COUNT + 1)),
-        "!(NV_ARRAY_ELEMENTS32(genDsmSubFuncRemapTable) %% (ACPI_DSM_FUNCTION_COUNT + 1))",
+        !(NV_ARRAY_ELEMENTS(genDsmSubFuncRemapTable) % (ACPI_DSM_FUNCTION_COUNT + 1)),
+        "!(NV_ARRAY_ELEMENTS(genDsmSubFuncRemapTable) %% (ACPI_DSM_FUNCTION_COUNT + 1))",
         return NV_ERR_INVALID_ARGUMENT);
 
     // find the event in the table
     i = 0;
-    while (i <= (NV_ARRAY_ELEMENTS32(genDsmSubFuncRemapTable) - ACPI_DSM_FUNCTION_COUNT - 1))
+    while (i <= (NV_ARRAY_ELEMENTS(genDsmSubFuncRemapTable) - ACPI_DSM_FUNCTION_COUNT - 1))
     {
         if (acpiDsmSubFunction == genDsmSubFuncRemapTable[i])
         {
@@ -780,6 +780,8 @@ _acpiDsmSupportedFuncCacheInit
     // Just checking to make sure this is correct!
     NV_ASSERT_OR_RETURN_VOID(0 == ACPI_DSM_FUNCTION_NBSI);
 
+    portMemSet(supportFuncs, 0, sizeof(supportFuncs));
+
     //
     // loop through all guids. The read will cache the subfunction list (if
     // available)
@@ -821,11 +823,11 @@ _acpiDsmSupportedFuncCacheInit
         // try package type for argument 3.
         pGpu->acpi.dsm[func].bArg3isInteger = NV_FALSE;
         rtnSize = sizeof(supportFuncs);
-        status = pGpu->pOS->osCallACPI_DSM(pGpu,
-                                           func,
-                                           NV_ACPI_ALL_FUNC_SUPPORT,
-                                           (NvU32 *) &supportFuncs,
-                                           &rtnSize);
+        status = osCallACPI_DSM(pGpu,
+                                func,
+                                NV_ACPI_ALL_FUNC_SUPPORT,
+                                (NvU32 *) &supportFuncs,
+                                &rtnSize);
         if (status != NV_OK)
         {
             if (status == NV_ERR_INVALID_ARGUMENT)
@@ -833,11 +835,11 @@ _acpiDsmSupportedFuncCacheInit
                 // maybe an older SBIOS, try integer type for argument 3.
                 pGpu->acpi.dsm[func].bArg3isInteger = NV_TRUE;
                 rtnSize = sizeof(supportFuncs);
-                status = pGpu->pOS->osCallACPI_DSM(pGpu,
-                                                   func,
-                                                   NV_ACPI_ALL_FUNC_SUPPORT,
-                                                   (NvU32 *) &supportFuncs,
-                                                   &rtnSize);
+                status = osCallACPI_DSM(pGpu,
+                                        func,
+                                        NV_ACPI_ALL_FUNC_SUPPORT,
+                                        (NvU32 *) &supportFuncs,
+                                        &rtnSize);
             }
         }
         if (_isDsmError(status, rtnSize, (NvU32 *) &supportFuncs))
@@ -855,7 +857,7 @@ _acpiDsmSupportedFuncCacheInit
     }
 }
 
-static void 
+static void
 _acpiDsmCallbackInit
 (
     OBJGPU *pGpu
@@ -906,11 +908,11 @@ _acpiDsmCallbackInit
 
         if (testIfDsmSubFunctionEnabled(pGpu, func, NV_ACPI_GENERIC_FUNC_CALLBACKS) == NV_OK)
         {
-            status = pGpu->pOS->osCallACPI_DSM(pGpu,
-                                               func,
-                                               NV_ACPI_GENERIC_FUNC_CALLBACKS,
-                                               &callbacks,
-                                               &rtnSize);
+            status = osCallACPI_DSM(pGpu,
+                                    func,
+                                    NV_ACPI_GENERIC_FUNC_CALLBACKS,
+                                    &callbacks,
+                                    &rtnSize);
 
             if (_isDsmError(status, rtnSize, &callbacks))
             {
@@ -961,7 +963,7 @@ _acpiDsmCallbackInit
  *
  * @returns
  */
-static void 
+static void
 _acpiDsmCapsInit
 (
     OBJGPU *pGpu
@@ -979,11 +981,11 @@ _acpiDsmCapsInit
     if (testIfDsmSubFunctionEnabled(pGpu, func, asmDsmSubFunction) == NV_OK)
     {
         rtnSize = sizeof(platCaps);
-        status = pGpu->pOS->osCallACPI_DSM(pGpu,
-                                           func,
-                                           asmDsmSubFunction,
-                                           &platCaps,
-                                           &rtnSize);
+        status = osCallACPI_DSM(pGpu,
+                                func,
+                                asmDsmSubFunction,
+                                &platCaps,
+                                &rtnSize);
 
         if (_isDsmError(status, rtnSize, &platCaps))
         {
@@ -1106,7 +1108,6 @@ _acpiCacheMethodData
 )
 {
     NV_STATUS status;
-    OBJOS *pOs = GPU_GET_OS(pGpu);
     NvU32 inOut = 0;
     NvU16 rtnSize = sizeof(inOut);
     NvU32 tableLen = 0, acpiidIndex = 0, mode = 0, muxPartId = 0;
@@ -1117,16 +1118,17 @@ _acpiCacheMethodData
     // Fill in the DOD Method Data.
     pGpu->acpiMethodData.dodMethodData.acpiIdListLen = sizeof(pGpu->acpiMethodData.dodMethodData.acpiIdList);
 
-    status = pOs->osCallACPI_DOD(pGpu, pGpu->acpiMethodData.dodMethodData.acpiIdList, &pGpu->acpiMethodData.dodMethodData.acpiIdListLen);
+    status = osCallACPI_DOD(pGpu, pGpu->acpiMethodData.dodMethodData.acpiIdList, &pGpu->acpiMethodData.dodMethodData.acpiIdListLen);
 
     pGpu->acpiMethodData.dodMethodData.status = status;
 
     // Fill in the JT Method Data.
-    status = pOs->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_JT, JT_FUNC_CAPS, &inOut, &rtnSize);
+    status = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_JT, JT_FUNC_CAPS, &inOut, &rtnSize);
 
     pGpu->acpiMethodData.jtMethodData.status  = status;
     pGpu->acpiMethodData.jtMethodData.jtCaps  = inOut;
-    pGpu->acpiMethodData.jtMethodData.jtRevId = (NvU16)DRF_VAL(_JT_FUNC, _CAPS, _REVISION_ID, inOut); 
+    pGpu->acpiMethodData.jtMethodData.jtRevId = (NvU16)DRF_VAL(_JT_FUNC, _CAPS, _REVISION_ID, inOut);
+    gpuSetGC6SBIOSCapabilities(pGpu);
 
     // Fill in the MUX Method Data.
     portMemSet(pGpu->acpiMethodData.muxMethodData.acpiIdMuxModeTable, 0, sizeof(pGpu->acpiMethodData.muxMethodData.acpiIdMuxModeTable));
@@ -1137,12 +1139,12 @@ _acpiCacheMethodData
         pGpu->acpiMethodData.muxMethodData.tableLen = tableLen;
         for (acpiidIndex = 0; acpiidIndex < tableLen; acpiidIndex++)
         {
-            status = pOs->osCallACPI_MXDM(pGpu, pGpu->acpiMethodData.dodMethodData.acpiIdList[acpiidIndex], &mode);
+            status = osCallACPI_MXDM(pGpu, pGpu->acpiMethodData.dodMethodData.acpiIdList[acpiidIndex], &mode);
             pGpu->acpiMethodData.muxMethodData.acpiIdMuxModeTable[acpiidIndex].acpiId = pGpu->acpiMethodData.dodMethodData.acpiIdList[acpiidIndex];
             pGpu->acpiMethodData.muxMethodData.acpiIdMuxModeTable[acpiidIndex].mode = mode;
             pGpu->acpiMethodData.muxMethodData.acpiIdMuxModeTable[acpiidIndex].status = status;
 
-            status = pOs->osCallACPI_MXID(pGpu, pGpu->acpiMethodData.dodMethodData.acpiIdList[acpiidIndex], &muxPartId);
+            status = osCallACPI_MXID(pGpu, pGpu->acpiMethodData.dodMethodData.acpiIdList[acpiidIndex], &muxPartId);
             pGpu->acpiMethodData.muxMethodData.acpiIdMuxPartTable[acpiidIndex].acpiId = pGpu->acpiMethodData.dodMethodData.acpiIdList[acpiidIndex];
             pGpu->acpiMethodData.muxMethodData.acpiIdMuxPartTable[acpiidIndex].mode = muxPartId;
             pGpu->acpiMethodData.muxMethodData.acpiIdMuxPartTable[acpiidIndex].status = status;
@@ -1151,8 +1153,8 @@ _acpiCacheMethodData
     }
 
     // Fill in the Optimus caps Method Data.
-    status = pGpu->pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVOP, NVOP_FUNC_OPTIMUSCAPS,
-                                        &pGpu->acpiMethodData.capsMethodData.optimusCaps, &rtnSize);
+    status = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVOP, NVOP_FUNC_OPTIMUSCAPS,
+                            &pGpu->acpiMethodData.capsMethodData.optimusCaps, &rtnSize);
     pGpu->acpiMethodData.capsMethodData.status = status;
 }
 

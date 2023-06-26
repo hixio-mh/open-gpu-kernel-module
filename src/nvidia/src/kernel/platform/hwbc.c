@@ -160,7 +160,7 @@ static NV_STATUS Plx_Pex8747_GetUpstreamBusSpeed(OBJHWBC *pPlx, OBJCL *pCl, NvU3
 static RmPhysAddr Plx_Pex8747_GetBar0(OBJCL *pCl, OBJHWBC *pPlx);
 
 //
-// static functions 
+// static functions
 //
 
 static OBJHWBC  *objClFindUpperHWBC(OBJCL *, NBADDR, OBJHWBC *, RmPhysAddr);
@@ -744,7 +744,7 @@ objClSetupBR03
             needRes[dev+1] = 1;
             total++;
         } else
-        if (!handle || vendorID == PCI_INVALID_VENDORID)
+        if (!handle || !PCI_IS_VENDORID_VALID(vendorID))
             totalDevices--;
     }
 

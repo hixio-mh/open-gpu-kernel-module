@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -79,11 +79,11 @@ static NV_STATUS  gsyncFrameCountTimerService_P2060(OBJGPU *, OBJTMR *, void *);
 static NV_STATUS  gsyncResetFrameCountData_P2060(OBJGPU *, PDACP2060EXTERNALDEVICE);
 
 static NV_STATUS  gsyncGpuStereoHeadSync(OBJGPU *, NvU32, PDACEXTERNALDEVICE, NvU32);
-static NvBool     supportsLargeSyncSkew(PDACEXTERNALDEVICE);
+static NvBool     supportsMulDiv(DACEXTERNALDEVICE *);
 static NvBool     needsMasterBarrierWar(PDACEXTERNALDEVICE);
 static NvBool     isFirmwareRevMismatch(OBJGPU *, DAC_EXTERNAL_DEVICE_REVS);
 
-static NvBool     isBoardWithNvlinkQsyncContention(POBJGPU);
+static NvBool     isBoardWithNvlinkQsyncContention(OBJGPU *);
 static void       _extdevService(NvU32 , void *);
 
 NvBool
@@ -349,7 +349,7 @@ extdevSaveI2cHandles_P2060
     NV_ASSERT_OR_RETURN(rmStatus == NV_OK, NV_FALSE);
 
     rmStatus = pRmApi->Alloc(pRmApi, hClient, hSubdevice,
-                            &hSubscription, NV40_I2C, NULL);
+                            &hSubscription, NV40_I2C, NULL, 0);
 
     NV_ASSERT_OR_RETURN(rmStatus == NV_OK, NV_FALSE);
 
@@ -683,12 +683,12 @@ gsyncAttachExternalDevice_P2060
     connector = iface + 1;
 
     //
-    // If adding a check before the gsyncAttachGpu call and returning before 
+    // If adding a check before the gsyncAttachGpu call and returning before
     // that please add the following code:
     // pThis->gpuAttachMask &= ~NVBIT(pGpu->gpuInstance);
     //    (*ppExtdevs)->ReferenceCount--;
-    // before returning NV_FALSE so that the caller can destroy the 
-    // ext device structure. The destroy funciton only decrements the ref count 
+    // before returning NV_FALSE so that the caller can destroy the
+    // ext device structure. The destroy funciton only decrements the ref count
     // if the gpu has already been attached.
     //
     (*ppExtdevs)->ReferenceCount++;
@@ -1114,7 +1114,7 @@ extdevWatchdog_P2060
 static NV_STATUS
 gsyncApplyStereoPinAlwaysHiWar
 (
-    POBJGPU            pGpu,
+    OBJGPU            *pGpu,
     PDACEXTERNALDEVICE pExtDev
 )
 {
@@ -1126,7 +1126,7 @@ gsyncApplyStereoPinAlwaysHiWar
 static NV_STATUS
 gsyncUnApplyStereoPinAlwaysHiWar
 (
-    POBJGPU pGpu
+    OBJGPU *pGpu
 )
 {
 
@@ -1921,7 +1921,7 @@ gsyncSetSyncSkew_P2060
     // update p2060 object
     pThis->SyncSkew = SyncSkew;
 
-    if (supportsLargeSyncSkew(pExtDev))
+    if (gsyncSupportsLargeSyncSkew_P2060(pExtDev))
     {
         SyncSkewLow  = (NvU8)((SyncSkew     ) & DRF_MASK(NV_P2060_SYNC_SKEW_LOW_VAL ));
         SyncSkewHigh = (NvU8)((SyncSkew >> 8) & DRF_MASK(NV_P2060_SYNC_SKEW_HIGH_VAL));
@@ -2073,15 +2073,11 @@ gsyncReadHouseSignalPresent_P2060
 /*
  * This function returns whether there is a sync source present.
  *
- * SYNC_LOSS bit in STATUS register is true by default, i.e when there
- * is no incoming sync source. This bit is unset when a stable sync
- * source is detected.
+ * If framelock is not enabled, the only sync source possible is an external signal.
  *
- * Whenever framelock is enabled, NV_TRUE is returned only when the incoming
- * sync source is stable. Therefore it is sent based on the software state.
- *
- * When framelock is not enabled, return value totally depends on the value
- * of the gsync STATUS register.
+ * If framelock is enabled, a local master may be providing the sync signal, or
+ * housesync may be providing a signal via a local master, or we may need to
+ * poll for an external signal.
  */
 static NV_STATUS
 gsyncReadIsSyncDetected_P2060
@@ -2092,8 +2088,11 @@ gsyncReadIsSyncDetected_P2060
 )
 {
     PDACP2060EXTERNALDEVICE pThis = (PDACP2060EXTERNALDEVICE)pExtDev;
-    NV_STATUS rmStatus = NV_OK;
-    NvU32 iface;
+    KernelDisplay *pKernelDisplay = GPU_GET_KERNEL_DISPLAY(pGpu);
+    NvU32 numHeads = kdispGetNumHeads(pKernelDisplay);
+
+    // Assume we are not synced, unless we match one of the cases below
+    *pVal = NV_FALSE;
 
     NV_ASSERT_OR_RETURN(pGpu, NV_ERR_GENERIC);
 
@@ -2101,30 +2100,90 @@ gsyncReadIsSyncDetected_P2060
     {
         NvU8 regStatus;
 
-        // framelock is not enabled, read the NV_P2060_STATUS register to get the SYNC status
-        rmStatus = readregu008_extdeviceTargeted(pGpu, (PDACEXTERNALDEVICE)pThis, (NvU8)NV_P2060_STATUS, &regStatus);
-
-        if (rmStatus == NV_OK)
-        {
-            *pVal = (NV_P2060_STATUS_SYNC_LOSS_TRUE !=  DRF_VAL(_P2060, _STATUS, _SYNC_LOSS, regStatus));
-        }
+        //
+        // Framelock is not enabled; read the NV_P2060_STATUS register to get
+        // the external sync status
+        //
+        NV_ASSERT_OK_OR_RETURN(
+            readregu008_extdeviceTargeted(pGpu, pExtDev, (NvU8)NV_P2060_STATUS, &regStatus));
+        *pVal = FLD_TEST_DRF(_P2060, _STATUS, _SYNC_LOSS, _FALSE, regStatus);
     }
     else
     {
-        rmStatus = GetP2060GpuLocation(pGpu, pThis, &iface);
-        if (NV_OK != rmStatus)
-        {
-            return rmStatus;
-        }
+        NvU32 iface, head, tempIface, tempHead;
 
-        //
-        // Sync gain should only be derived from our internal tracking variable.
-        // The gsync status variables are reporting more transient data than desired.
-        //
-        *pVal = pThis->Iface[iface].gainedSync;
+        NV_ASSERT_OK_OR_RETURN(GetP2060GpuLocation(pGpu, pThis, &iface));
+
+
+        for (head = 0; head < numHeads; head++)
+        {
+            // Check if we're slaved to another master head in the same system
+            if (pThis->Iface[iface].Sync.LocalSlave[head])
+            {
+                for (tempIface = 0; tempIface < NV_P2060_MAX_IFACES_PER_GSYNC; tempIface++)
+                {
+                    for (tempHead = 0; tempHead < numHeads; tempHead++)
+                    {
+                        if (pThis->Iface[tempIface].Sync.Master[tempHead])
+                        {
+                            //
+                            // If we're slaved to another local head, we are
+                            // receiving a sync signal from it. (But if it uses
+                            // housesync, then it must also be receiving housesync.)
+                            //
+                            if (!pThis->Iface[tempIface].Sync.Slaved[tempHead])
+                            {
+                                *pVal = NV_TRUE;
+                            }
+                            else
+                            {
+                                NV_ASSERT_OK_OR_RETURN(
+                                    gsyncReadHouseSignalPresent_P2060(pGpu, pExtDev,
+                                                                      NV_TRUE, pVal));
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+
+            if (pThis->Iface[iface].Sync.Master[head])
+            {
+                //
+                // A master head with no house signal has its own sync signal.
+                // A master head with house signal has a sync signal if the
+                // house signal is present.
+                //
+                if (pThis->Iface[iface].Sync.Slaved[head])
+                {
+                    NV_ASSERT_OK_OR_RETURN(
+                        gsyncReadHouseSignalPresent_P2060(pGpu, pExtDev, NV_TRUE, pVal));
+                    break;
+                }
+                else
+                {
+                    *pVal = NV_TRUE;
+                    break;
+                }
+            }
+
+            if (pThis->Iface[iface].Sync.Slaved[head])
+            {
+                NvU8 regStatus;
+
+                //
+                // A slaved head with external master signal must poll
+                // NV_P2060_STATUS_SYNC_LOSS for sync status.
+                //
+                NV_ASSERT_OK_OR_RETURN(
+                    readregu008_extdeviceTargeted(pGpu, pExtDev, (NvU8)NV_P2060_STATUS, &regStatus));
+                *pVal = FLD_TEST_DRF(_P2060, _STATUS, _SYNC_LOSS, _FALSE, regStatus);
+                break;
+            }
+        }
     }
 
-    return rmStatus;
+    return NV_OK;
 }
 
 /*
@@ -2191,41 +2250,12 @@ gsyncReadStereoLocked_P2060
     return rmStatus;
 }
 
-/*
- * Check if VCXO is locked or not.
- */
-static NV_STATUS
-gsyncReadVCXOLocked_P2060
-(
-    OBJGPU *pGpu,
-    PDACEXTERNALDEVICE pExtDev,
-    NvU32 *pVal
-)
-{
-    PDACP2060EXTERNALDEVICE pThis = (PDACP2060EXTERNALDEVICE)pExtDev;
-    NV_STATUS rmStatus = NV_OK;
-    NvU32 regStatus =  GetP2060GpuSnapshot(pGpu,pThis);
-
-    // Status1 only needs to be read if the shapshot shows recent error or no vcxo lock
-    if (!FLD_TEST_DRF(_P2060, _STATUS, _VCXO, _LOCK, regStatus))
-    {
-        rmStatus = gsyncUpdateGsyncStatusSnapshot_P2060(pGpu, pExtDev);
-        if ( NV_OK == rmStatus )
-        {
-            *pVal = FLD_TEST_DRF(_P2060, _STATUS, _VCXO, _LOCK, GetP2060GpuSnapshot(pGpu,pThis));
-        }
-    }
-    else
-    {
-        *pVal = 1; //VCXO is locked.
-    }
-
-    return rmStatus;
-}
-
-/*
- * Check if timing is present or not.
- */
+//
+// Check if we are in sync, i.e. we supply the master sync signal or are servoed
+// to the master sync signal. The servo should be stable for about 5 seconds if
+// the signal is external (i.e. use the gainedSync value which already maintains
+// this.)
+//
 static NV_STATUS
 gsyncReadIsTiming_P2060
 (
@@ -2235,73 +2265,15 @@ gsyncReadIsTiming_P2060
 )
 {
     PDACP2060EXTERNALDEVICE pThis = (PDACP2060EXTERNALDEVICE)pExtDev;
-    NV_STATUS rmStatus = NV_OK;
-    KernelDisplay  *pKernelDisplay = GPU_GET_KERNEL_DISPLAY(pGpu);
-    NvU32 numHeads = kdispGetNumHeads(pKernelDisplay);
-    NvU32 bHouse, bLock = 0, bSync;
-    NvU32 iface, head, tempIface, tempHead;
+    NvU32 iface;
 
-    rmStatus = GetP2060GpuLocation(pGpu, pThis, &iface);
-    if (NV_OK != rmStatus)
-    {
-         return rmStatus;
-    }
+    *pVal = NV_FALSE;
 
-    // assume no, unless we find something below
-    *pVal = (NvU32)NV_FALSE;
+    NV_ASSERT_OK_OR_RETURN(GetP2060GpuLocation(pGpu, pThis, &iface));
 
-    for (head = 0; head < numHeads; head++)
-    {
-        // check if we're slaved to another master head in the same system
-        if (pThis->Iface[iface].Sync.LocalSlave[head])
-        {
-            for (tempIface = 0; tempIface < NV_P2060_MAX_IFACES_PER_GSYNC; tempIface++)
-            {
-                for (tempHead = 0; tempHead < numHeads; tempHead++)
-                {
-                    if (pThis->Iface[tempIface].Sync.Master[tempHead])
-                    {
-                        // assume that if we're slaved to another local head
-                        // that we're in sync. there's no easy way to verify
-                        // this, short of trying to compare raster scanlines
-                        *pVal = (NvU32)NV_TRUE;
-                    }
-                }
-            }
-            break;
-        }
+    *pVal = pThis->Iface[iface].gainedSync;
 
-        // check if we have a master, connected to a house sync
-        if (pThis->Iface[iface].Sync.Master[head] && pThis->Iface[iface].Sync.Slaved[head])
-        {
-            rmStatus |= gsyncReadHouseSignalPresent_P2060(pGpu, pExtDev, NV_TRUE, &bHouse);
-            if ( NV_OK == rmStatus )
-            {
-                *pVal = (NvU32)(bHouse);
-            }
-            break;
-        }
-
-        // check if we have a master head, not connected to house sync
-        if (pThis->Iface[iface].Sync.Master[head])
-        {
-            // a master is by definition always in sync
-            *pVal = (NvU32)NV_TRUE;
-            break;
-        }
-
-        if (pThis->Iface[iface].Sync.Slaved[head])
-        {
-            rmStatus |= gsyncReadIsSyncDetected_P2060(pGpu, pExtDev, &bSync);
-            rmStatus |= gsyncReadVCXOLocked_P2060(pGpu, pExtDev, &bLock);
-            if ( NV_OK == rmStatus )
-            {
-                *pVal = (NvU32)(bSync && bLock);
-            }
-            break;
-        }
-    }
-    return rmStatus;
+    return NV_OK;
 }
 
 
@@ -4095,6 +4067,8 @@ gsyncGetRevision_P2060
         return NV_ERR_GENERIC; // something more descriptive, perhaps?
     }
 
+    portMemSet(pParams, 0, sizeof(*pParams));
+
     pParams->revId = (NvU32)pExtDev->revId;
     pParams->boardId = (NvU32)deviceId;
     pParams->revision = (NvU32)deviceRev;
@@ -4104,6 +4078,8 @@ gsyncGetRevision_P2060
         (deviceId == DAC_EXTERNAL_DEVICE_P2060 ||
          deviceId == DAC_EXTERNAL_DEVICE_P2061))
     {
+        DACP2060EXTERNALDEVICE *p2060 = (DACP2060EXTERNALDEVICE *)pExtDev;
+
         pParams->capFlags = NV30F1_CTRL_GSYNC_GET_CAPS_CAP_FLAGS_FREQ_ACCURACY_3DPS;
 
         if (!pSys->getProperty(pSys, PDB_PROP_SYS_IS_QSYNC_FW_REVISION_CHECK_DISABLED))
@@ -4115,19 +4091,11 @@ gsyncGetRevision_P2060
             pParams->isFirmwareRevMismatch = NV_FALSE;
         }
 
-        if (supportsLargeSyncSkew(pExtDev))
-        {
-            pParams->maxSyncSkew = NV_P2060_SYNC_SKEW_MAX_UNITS_FULL_SUPPORT;
-        }
-        else
-        {
-            pParams->maxSyncSkew = NV_P2060_SYNC_SKEW_MAX_UNITS_LIMITED_SUPPORT;
-        }
-
-        pParams->syncSkewResolution = NV_P2060_SYNC_SKEW_RESOLUTION;
-        pParams->maxStartDelay = NV_P2060_START_DELAY_MAX_UNITS;
+        pParams->maxSyncSkew          = p2060->syncSkewMax;
+        pParams->syncSkewResolution   = p2060->syncSkewResolutionInNs;
+        pParams->maxStartDelay        = NV_P2060_START_DELAY_MAX_UNITS;
         pParams->startDelayResolution = NV_P2060_START_DELAY_RESOLUTION;
-        pParams->maxSyncInterval = NV_P2060_SYNC_INTERVAL_MAX_UNITS;
+        pParams->maxSyncInterval      = NV_P2060_SYNC_INTERVAL_MAX_UNITS;
 
         // let client know which events we support
         pParams->capFlags |= NV30F1_CTRL_GSYNC_GET_CAPS_CAP_FLAGS_SYNC_LOCK_EVENT;
@@ -4146,6 +4114,12 @@ gsyncGetRevision_P2060
         if (needsMasterBarrierWar(pExtDev))
         {
             pParams->capFlags |= NV30F1_CTRL_GSYNC_GET_CAPS_CAP_FLAGS_NEED_MASTER_BARRIER_WAR;
+        }
+
+        if (supportsMulDiv(pExtDev))
+        {
+            pParams->capFlags |= NV30F1_CTRL_GSYNC_GET_CAPS_CAP_FLAGS_MULTIPLY_DIVIDE_SYNC;
+            pParams->maxMulDivValue = (NV_P2060_MULTIPLIER_DIVIDER_VALUE_MINUS_ONE_MAX + 1);
         }
     }
     else
@@ -5356,10 +5330,10 @@ gsyncGetNumberOfGpuFrameCountRollbacks_P2060
 }
 
 // Return NV_TRUE if the current Qsync revision supports large sync skew
-static NvBool
-supportsLargeSyncSkew
+NvBool
+gsyncSupportsLargeSyncSkew_P2060
 (
-    PDACEXTERNALDEVICE pExtdev
+    DACEXTERNALDEVICE *pExtdev
 )
 {
     if (pExtdev->deviceId == DAC_EXTERNAL_DEVICE_P2061)
@@ -5429,7 +5403,7 @@ isFirmwareRevMismatch
 
 /*
  * Nvlink and QSync can both transmit inter-GPU Display sync signals.
- * Contention in these signals is observed on some boards, if both Nvlink and 
+ * Contention in these signals is observed on some boards, if both Nvlink and
  * QSync are present between the boards.
  *
  * Returns TRUE if contention in transmission of sync signals possible on the
@@ -5439,7 +5413,7 @@ isFirmwareRevMismatch
 static NvBool
 isBoardWithNvlinkQsyncContention
 (
-    POBJGPU pGpu
+    OBJGPU *pGpu
 )
 {
     NvU16 devIds[] = {
@@ -5460,4 +5434,106 @@ isBoardWithNvlinkQsyncContention
     }
 
     return NV_FALSE;
+}
+
+// Return NV_TRUE if the current Qsync revision supports sync multiply/divide
+static NvBool
+supportsMulDiv
+(
+    DACEXTERNALDEVICE *pExtDev
+)
+{
+    // Supported only for 2061 boards with >= 2.4
+    if (pExtDev->deviceId == DAC_EXTERNAL_DEVICE_P2061)
+    {
+        if ((pExtDev->deviceRev >= DAC_EXTERNAL_DEVICE_REV_3) ||
+            ((pExtDev->deviceRev == DAC_EXTERNAL_DEVICE_REV_2) &&
+             (pExtDev->deviceExRev >= 4)))
+        {
+            return NV_TRUE;
+        }
+    }
+    return NV_FALSE;
+}
+
+NV_STATUS
+gsyncGetMulDiv_P2060
+(
+    OBJGPU *pGpu,
+    DACEXTERNALDEVICE *pExtDev,
+    NV30F1_CTRL_GSYNC_MULTIPLY_DIVIDE_SETTINGS *pMulDivSettings
+)
+{
+    DACP2060EXTERNALDEVICE *pThis = (DACP2060EXTERNALDEVICE *)pExtDev;
+    NvU8 reg;
+
+    NV_ASSERT_OR_RETURN(pMulDivSettings != NULL, NV_ERR_INVALID_ARGUMENT);
+    NV_CHECK_OR_RETURN(LEVEL_INFO, supportsMulDiv(pExtDev), NV_ERR_NOT_SUPPORTED);
+
+    NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
+        readregu008_extdeviceTargeted(pGpu, pExtDev, NV_P2060_MULTIPLIER_DIVIDER, &reg));
+
+    pMulDivSettings->multiplyDivideValue =
+        DRF_VAL(_P2060, _MULTIPLIER_DIVIDER, _VALUE_MINUS_ONE, reg) + 1;
+    pMulDivSettings->multiplyDivideMode =
+        FLD_TEST_DRF(_P2060, _MULTIPLIER_DIVIDER, _MODE, _DIVIDE, reg) ?
+            NV30F1_CTRL_GSYNC_SET_CONTROL_MULTIPLY_DIVIDE_MODE_DIVIDE :
+            NV30F1_CTRL_GSYNC_SET_CONTROL_MULTIPLY_DIVIDE_MODE_MULTIPLY;
+
+    // Cache this for debugging
+    portMemCopy(&pThis->mulDivSettings, sizeof(pThis->mulDivSettings),
+                pMulDivSettings, sizeof(*pMulDivSettings));
+
+    return NV_OK;
+}
+
+NV_STATUS
+gsyncSetMulDiv_P2060
+(
+    OBJGPU *pGpu,
+    DACEXTERNALDEVICE *pExtDev,
+    NV30F1_CTRL_GSYNC_MULTIPLY_DIVIDE_SETTINGS *pMulDivSettings
+)
+{
+    DACP2060EXTERNALDEVICE *pThis = (DACP2060EXTERNALDEVICE *)pExtDev;
+    NvU8 reg;
+
+    NV_ASSERT_OR_RETURN(pMulDivSettings != NULL, NV_ERR_INVALID_ARGUMENT);
+    NV_CHECK_OR_RETURN(LEVEL_INFO, supportsMulDiv(pExtDev), NV_ERR_NOT_SUPPORTED);
+    pGpu = GetP2060MasterableGpu(pGpu, (DACP2060EXTERNALDEVICE *)pExtDev);
+    NV_ASSERT_OR_RETURN(pGpu != NULL, NV_ERR_GENERIC);
+
+    //
+    // Assume that there are no other fields inside NV_P2060_MULTIPLIER_DIVIDER
+    // to necessitate a read-modify-write
+    //
+    reg = 0;
+
+    switch (pMulDivSettings->multiplyDivideMode)
+    {
+        case NV30F1_CTRL_GSYNC_SET_CONTROL_MULTIPLY_DIVIDE_MODE_MULTIPLY:
+            reg = FLD_SET_DRF(_P2060, _MULTIPLIER_DIVIDER, _MODE, _MULTIPLY, reg);
+            break;
+        case NV30F1_CTRL_GSYNC_SET_CONTROL_MULTIPLY_DIVIDE_MODE_DIVIDE:
+            reg = FLD_SET_DRF(_P2060, _MULTIPLIER_DIVIDER, _MODE, _DIVIDE, reg);
+            break;
+        default:
+            return NV_ERR_INVALID_PARAMETER;
+    }
+
+    // The register is a 3-bit value ranging from 0-7 representing the integers from 1-8, so check the input param
+    if ((pMulDivSettings->multiplyDivideValue < 1) ||
+        (pMulDivSettings->multiplyDivideValue > (NV_P2060_MULTIPLIER_DIVIDER_VALUE_MINUS_ONE_MAX + 1)))
+        return NV_ERR_INVALID_PARAMETER;
+    // Subtract 1 while packing the register
+    reg = FLD_SET_DRF_NUM(_P2060, _MULTIPLIER_DIVIDER, _VALUE_MINUS_ONE,
+                          pMulDivSettings->multiplyDivideValue - 1, reg);
+
+    NV_CHECK_OK_OR_RETURN(LEVEL_INFO, writeregu008_extdeviceTargeted(pGpu, pExtDev, NV_P2060_MULTIPLIER_DIVIDER, reg));
+
+    // Cache this for debugging
+    portMemCopy(&pThis->mulDivSettings, sizeof(pThis->mulDivSettings),
+                pMulDivSettings, sizeof(*pMulDivSettings));
+
+    return NV_OK;
 }

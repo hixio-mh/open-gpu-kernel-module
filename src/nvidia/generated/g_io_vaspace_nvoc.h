@@ -159,11 +159,11 @@ struct OBJIOVASPACE {
     NvBool (*__iovaspaceIsInternalVaRestricted__)(struct OBJIOVASPACE *);
     NvU32 (*__iovaspaceGetFlags__)(struct OBJIOVASPACE *);
     NvBool (*__iovaspaceIsAtsEnabled__)(struct OBJIOVASPACE *);
-    NvU32 (*__iovaspaceGetBigPageSize__)(struct OBJIOVASPACE *);
+    NvU64 (*__iovaspaceGetBigPageSize__)(struct OBJIOVASPACE *);
     NV_STATUS (*__iovaspaceGetPteInfo__)(struct OBJIOVASPACE *, struct OBJGPU *, NV0080_CTRL_DMA_GET_PTE_INFO_PARAMS *, RmPhysAddr *);
     PMEMORY_DESCRIPTOR (*__iovaspaceGetPageDirBase__)(struct OBJIOVASPACE *, struct OBJGPU *);
     PMEMORY_DESCRIPTOR (*__iovaspaceGetKernelPageDirBase__)(struct OBJIOVASPACE *, struct OBJGPU *);
-    NvU32 (*__iovaspaceGetMapPageSize__)(struct OBJIOVASPACE *, struct OBJGPU *, EMEMBLOCK *);
+    NvU64 (*__iovaspaceGetMapPageSize__)(struct OBJIOVASPACE *, struct OBJGPU *, EMEMBLOCK *);
     struct OBJEHEAP *(*__iovaspaceGetHeap__)(struct OBJIOVASPACE *);
     NvBool (*__iovaspaceIsFaultCapable__)(struct OBJIOVASPACE *);
     void (*__iovaspaceUnmap__)(struct OBJIOVASPACE *, struct OBJGPU *, const NvU64, const NvU64);
@@ -305,7 +305,7 @@ static inline NvBool iovaspaceIsAtsEnabled_DISPATCH(struct OBJIOVASPACE *pVAS) {
     return pVAS->__iovaspaceIsAtsEnabled__(pVAS);
 }
 
-static inline NvU32 iovaspaceGetBigPageSize_DISPATCH(struct OBJIOVASPACE *pVAS) {
+static inline NvU64 iovaspaceGetBigPageSize_DISPATCH(struct OBJIOVASPACE *pVAS) {
     return pVAS->__iovaspaceGetBigPageSize__(pVAS);
 }
 
@@ -321,7 +321,7 @@ static inline PMEMORY_DESCRIPTOR iovaspaceGetKernelPageDirBase_DISPATCH(struct O
     return pVAS->__iovaspaceGetKernelPageDirBase__(pVAS, pGpu);
 }
 
-static inline NvU32 iovaspaceGetMapPageSize_DISPATCH(struct OBJIOVASPACE *pVAS, struct OBJGPU *pGpu, EMEMBLOCK *pMemBlock) {
+static inline NvU64 iovaspaceGetMapPageSize_DISPATCH(struct OBJIOVASPACE *pVAS, struct OBJGPU *pGpu, EMEMBLOCK *pMemBlock) {
     return pVAS->__iovaspaceGetMapPageSize__(pVAS, pGpu, pMemBlock);
 }
 

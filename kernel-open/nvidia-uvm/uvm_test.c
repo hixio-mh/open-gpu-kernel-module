@@ -300,7 +300,6 @@ long uvm_test_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_PMM_REVERSE_MAP,              uvm_test_pmm_reverse_map);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_PMM_INDIRECT_PEERS,           uvm_test_pmm_indirect_peers);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_VA_SPACE_MM_RETAIN,           uvm_test_va_space_mm_retain);
-        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_VA_SPACE_MM_DELAY_SHUTDOWN,   uvm_test_va_space_mm_delay_shutdown);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_PMM_CHUNK_WITH_ELEVATED_PAGE, uvm_test_pmm_chunk_with_elevated_page);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_VA_SPACE_INJECT_ERROR,        uvm_test_va_space_inject_error);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_GET_GPU_TIME,                 uvm_test_get_gpu_time);
@@ -324,13 +323,14 @@ long uvm_test_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_RB_TREE_RANDOM,               uvm_test_rb_tree_random);
         UVM_ROUTE_CMD_STACK_NO_INIT_CHECK(UVM_TEST_GET_USER_SPACE_END_ADDRESS, uvm_test_get_user_space_end_address);
         UVM_ROUTE_CMD_STACK_NO_INIT_CHECK(UVM_TEST_GET_CPU_CHUNK_ALLOC_SIZES, uvm_test_get_cpu_chunk_allocation_sizes);
-        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_HMM_SANITY,                   uvm_test_hmm_sanity);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_VA_RANGE_INJECT_ADD_GPU_VA_SPACE_ERROR,
                                        uvm_test_va_range_inject_add_gpu_va_space_error);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_DESTROY_GPU_VA_SPACE_DELAY,   uvm_test_destroy_gpu_va_space_delay);
+        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_SEC2_SANITY,                  uvm_test_sec2_sanity);
+        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_SEC2_CPU_GPU_ROUNDTRIP,       uvm_test_sec2_cpu_gpu_roundtrip);
         UVM_ROUTE_CMD_STACK_NO_INIT_CHECK(UVM_TEST_CGROUP_ACCOUNTING_SUPPORTED, uvm_test_cgroup_accounting_supported);
-        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_HMM_INIT, uvm_test_hmm_init);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_SPLIT_INVALIDATE_DELAY, uvm_test_split_invalidate_delay);
+        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_TEST_CPU_CHUNK_API, uvm_test_cpu_chunk_api);
     }
 
     return -EINVAL;

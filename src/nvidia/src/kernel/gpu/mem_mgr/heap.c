@@ -557,12 +557,12 @@ NV_STATUS heapInitInternal_IMPL
             }
         }
 
-        // 
+        //
         // Define PMA-managed regions
         // This will be moved to memmgr once we refactor SMC partitions
         //
-        if (memmgrIsPmaEnabled(pMemoryManager) && 
-            memmgrIsPmaSupportedOnPlatform(pMemoryManager) && 
+        if (memmgrIsPmaEnabled(pMemoryManager) &&
+            memmgrIsPmaSupportedOnPlatform(pMemoryManager) &&
             (heapType != HEAP_TYPE_PARTITION_LOCAL))
         {
             memmgrSetPmaInitialized(pMemoryManager, NV_TRUE);
@@ -657,6 +657,7 @@ NV_STATUS heapInitInternal_IMPL
         MEMORY_DESCRIPTOR *pMemDesc = NULL;
         NvBool bProtected = NV_FALSE;
 
+    bProtected = gpuIsCCFeatureEnabled(pGpu);
         status = heapReserveRegion(
             pMemoryManager,
             pHeap,
@@ -2751,7 +2752,7 @@ NV_STATUS heapAllocHint_IMPL
     NvU8                    currentBankInfo     = 0;
     FB_ALLOC_INFO          *pFbAllocInfo        = NULL;
     FB_ALLOC_PAGE_FORMAT   *pFbAllocPageFormat  = NULL;
-    NvU32                   pageSize            = 0;
+    NvU64                   pageSize            = 0;
     NvU32                   flags;
     NvU32                   owner;
     NvU32                   tiledAttr;
@@ -2898,7 +2899,7 @@ NV_STATUS heapAllocHint_IMPL
     if (pAllocHint->flags & NVOS32_ALLOC_FLAGS_FORCE_ALIGN_HOST_PAGE)
     {
         OBJSYS *pSys = SYS_GET_INSTANCE();
-        NvU32   hostPageSize = pSys->cpuInfo.hostPageSize;
+        NvU64   hostPageSize = pSys->cpuInfo.hostPageSize;
 
         // hostPageSize *should* always be set, but....
         if (hostPageSize == 0)
@@ -2984,7 +2985,7 @@ NV_STATUS heapHwAlloc_IMPL
     FB_ALLOC_INFO          *pFbAllocInfo = NULL;
     FB_ALLOC_PAGE_FORMAT   *pFbAllocPageFormat = NULL;
     NvU32                   tiledAttr;
-    NvU32                   pageSize = 0;
+    NvU64                   pageSize = 0;
     NV_MEMORY_HW_RESOURCES_ALLOCATION_PARAMS *pUserParams = pHwAlloc->pUserParams;
 
     // Ensure a valid allocation type was passed in
@@ -3064,7 +3065,7 @@ NV_STATUS heapHwAlloc_IMPL
     // host, if we are in guest OS (where IS_VIRTUAL(pGpu) is true),
     // do an RPC to the host to do the hardware update.
     //
-    if ((status == NV_OK) && (IS_VIRTUAL(pGpu) || IS_GSP_CLIENT(pGpu)))
+    if ((status == NV_OK) && IS_VIRTUAL(pGpu))
     {
         {
             NV_RM_RPC_MANAGE_HW_RESOURCE_ALLOC(pGpu,
@@ -3212,7 +3213,7 @@ void heapHwFree_IMPL
     // do an RPC to the host to do the hardware update.
     //
 
-    if (IS_VIRTUAL(pGpu) || IS_GSP_CLIENT(pGpu))
+    if (IS_VIRTUAL(pGpu))
     {
         {
             NV_STATUS rmStatus = NV_OK;
@@ -3225,8 +3226,7 @@ void heapHwFree_IMPL
                     rmStatus);
         }
     }
-
-    if (!IS_VIRTUAL(pGpu) && !IS_GSP_CLIENT(pGpu))
+    else
     {
         memmgrFreeHwResources(pGpu, pMemoryManager, pFbAllocInfo);
     }
@@ -3790,7 +3790,7 @@ _heapAllocNoncontig
     NvU32       pteIndexOffset = 0, i = 0;
     NvU32       blockId = 0;
     NV_STATUS   status = NV_OK;
-    NvU32       pageSize = 0;
+    NvU64       pageSize = 0;
     NvS64       numPagesLeft;
     MEM_BLOCK  *pCurrBlock;
     MEM_BLOCK  *pNextBlock;
@@ -3838,7 +3838,7 @@ _heapAllocNoncontig
     //
     numPagesLeft = RM_ALIGN_UP(pAllocData->allocSize, pageSize) / pageSize;
     NV_PRINTF(LEVEL_INFO,
-              "pageSize: 0x%x, numPagesLeft: 0x%llx, allocSize: 0x%llx\n",
+              "pageSize: 0x%llx, numPagesLeft: 0x%llx, allocSize: 0x%llx\n",
               pageSize / 1024, numPagesLeft, pAllocData->allocSize);
 
     for (pCurrBlock = pHeap->pNoncontigFreeBlockList;
@@ -4735,8 +4735,11 @@ NV_STATUS heapResize_IMPL
 
     if (resizeBy < 0) // Shrink the allocation
     {
+        NvS64 newSize;
+
         NV_ASSERT_OR_RETURN(pBlockLast->owner == NVOS32_BLOCK_TYPE_FREE, NV_ERR_NO_MEMORY);
-        NV_ASSERT_OR_RETURN((pBlockLast->end - pBlockLast->begin + resizeBy > 0), NV_ERR_INVALID_LIMIT);
+        NV_CHECK_OR_RETURN(LEVEL_ERROR, portSafeAddS64(pBlockLast->end - pBlockLast->begin, resizeBy, &newSize) &&
+                                        (newSize > 0), NV_ERR_INVALID_LIMIT);
         pBlockLast->end += resizeBy;
     }
     else // Grow the allocation

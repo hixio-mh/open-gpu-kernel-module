@@ -50,12 +50,14 @@ kbusSetupCpuPointerForBusFlush_GV100
 {
     NV_STATUS status = NV_OK;
 
-    // Nothing to be done in paravirtualized guest or if we don't want to do CPU reads for flushing.
+    // Nothing to be done in paravirtualized guest (or CC) or if we don't want to do CPU reads for flushing.
     if (IS_VIRTUAL_WITHOUT_SRIOV(pGpu) ||
         !kbusIsReadCpuPointerToFlushEnabled(pKernelBus))
     {
         return NV_OK;
     }
+
+    NV_ASSERT_OR_RETURN(!kbusIsBarAccessBlocked(pKernelBus), NV_ERR_INVALID_STATE);
 
     status = memdescCreate(&pKernelBus->pFlushMemDesc, pGpu,
                            RM_PAGE_SIZE,
@@ -136,7 +138,7 @@ kbusMapCoherentCpuMapping_GV100
     PMEMORY_DESCRIPTOR     pMemDesc
 )
 {
-    RmPhysAddr startAddr = memdescGetPhysAddr(pMemDesc, AT_GPU, 0);
+    RmPhysAddr startAddr = memdescGetPhysAddr(pMemDesc, FORCE_VMMU_TRANSLATION(pMemDesc, AT_GPU), 0);
     NvU64      size = memdescGetSize(pMemDesc);
     RmPhysAddr endAddr = startAddr + size - 1;
     RmPhysAddr rangeStart = 0;
@@ -186,7 +188,7 @@ kbusUnmapCoherentCpuMapping_GV100
     PMEMORY_DESCRIPTOR   pMemDesc
 )
 {
-    RmPhysAddr startAddr = pMemDesc->_pteArray[0] + pMemDesc->PteAdjust;
+    RmPhysAddr startAddr = memdescGetPhysAddr(pMemDesc, FORCE_VMMU_TRANSLATION(pMemDesc, AT_GPU), 0);
     NvU64      size = memdescGetSize(pMemDesc);
     RmPhysAddr endAddr = startAddr + size - 1;
     NvU32 i = 0;
@@ -212,7 +214,7 @@ kbusUnmapCoherentCpuMapping_GV100
     }
 
     // Flush the memory since caller writes to the FB
-    kbusFlush_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu), BUS_FLUSH_VIDEO_MEMORY);
+    kbusFlush_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu), BUS_FLUSH_VIDEO_MEMORY | BUS_FLUSH_USE_PCIE_READ);
 
     return;
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -68,6 +68,13 @@ ctxBufPoolIsSupported
     if (!memmgrIsPmaInitialized(pMemoryManager))
     {
         NV_PRINTF(LEVEL_INFO, "PMA is disabled. Ctx buffers will be allocated in RM reserved heap\n");
+        return NV_FALSE;
+    }
+
+    // TODO remove when bug ID 3922001 for ap_sim_compute_uvm test case resolved
+    if (!IS_SILICON(pGpu))
+    {
+        NV_PRINTF(LEVEL_INFO, "Ctx buffers not supported on simulation/emulation\n");
         return NV_FALSE;
     }
 
@@ -155,6 +162,11 @@ ctxBufPoolInit
                            poolConfig),
             cleanup);
 
+        // Allocate the pool in CPR in case of Confidential Compute
+        if (gpuIsCCFeatureEnabled(pGpu))
+        {
+            rmMemPoolAllocateProtectedMemory(pCtxBufPool->pMemPool[i], NV_TRUE);
+        }
     }
     NV_PRINTF(LEVEL_INFO, "Ctx buf pool successfully initialized\n");
 
@@ -244,7 +256,8 @@ ctxBufPoolReserve
 )
 {
     NV_STATUS status = NV_OK;
-    NvU32 pageSize, i;
+    NvU64 pageSize;
+    NvU32 i;
     NvU64 totalSize[RM_ATTR_PAGE_SIZE_INVALID] = {0};
     NvU64 size;
 
@@ -280,10 +293,10 @@ ctxBufPoolReserve
                 totalSize[RM_ATTR_PAGE_SIZE_512MB] += size;
                 break;
             default:
-                NV_PRINTF(LEVEL_ERROR, "Unrecognized/unsupported page size = 0x%x\n", pageSize);
+                NV_PRINTF(LEVEL_ERROR, "Unrecognized/unsupported page size = 0x%llx\n", pageSize);
                 NV_ASSERT_OR_RETURN(0, NV_ERR_INVALID_ARGUMENT);
         }
-        NV_PRINTF(LEVEL_INFO, "Reserving 0x%llx bytes for buf Id = 0x%x in pool with page size = 0x%x\n", size, i, pageSize);
+        NV_PRINTF(LEVEL_INFO, "Reserving 0x%llx bytes for buf Id = 0x%x in pool with page size = 0x%llx\n", size, i, pageSize);
     }
 
     for (i = 0; i < RM_ATTR_PAGE_SIZE_INVALID; i++)
@@ -382,10 +395,10 @@ ctxBufPoolAllocate
     }
 
     // If page size is not set, then set it based on actual size of memdesc and its alignment
-    NvU32 pageSize = memdescGetPageSize(pMemDesc, AT_GPU);
+    NvU64 pageSize = memdescGetPageSize(pMemDesc, AT_GPU);
     if ((pageSize == 0) || (memdescGetContiguity(pMemDesc, AT_GPU)))
     {
-        NvU32 newPageSize;
+        NvU64 newPageSize;
         NV_ASSERT_OK_OR_RETURN(ctxBufPoolGetSizeAndPageSize(pCtxBufPool, pMemDesc->pGpu,
             pMemDesc->Alignment, RM_ATTR_PAGE_SIZE_DEFAULT, memdescGetContiguity(pMemDesc, AT_GPU),
            &pMemDesc->ActualSize, &newPageSize));
@@ -400,7 +413,7 @@ ctxBufPoolAllocate
         if (pageSize == 0)
         {
             memdescSetPageSize(pMemDesc, AT_GPU, newPageSize);
-            NV_PRINTF(LEVEL_INFO, "Ctx buffer page size set to 0x%x\n", newPageSize);
+            NV_PRINTF(LEVEL_INFO, "Ctx buffer page size set to 0x%llx\n", newPageSize);
         }
         pageSize = newPageSize;
     }
@@ -422,11 +435,11 @@ ctxBufPoolAllocate
             pPool = pCtxBufPool->pMemPool[RM_ATTR_PAGE_SIZE_512MB];
             break;
         default:
-            NV_PRINTF(LEVEL_ERROR, "Unsupported page size = 0x%x set for context buffer\n", pageSize);
+            NV_PRINTF(LEVEL_ERROR, "Unsupported page size = 0x%llx set for context buffer\n", pageSize);
             NV_ASSERT_OR_RETURN(0, NV_ERR_INVALID_ARGUMENT);
     }
     NV_ASSERT_OK_OR_RETURN(rmMemPoolAllocate(pPool, (RM_POOL_ALLOC_MEMDESC*)pMemDesc));
-    NV_PRINTF(LEVEL_INFO, "Buffer allocated from ctx buf pool with page size = 0x%x\n", pageSize);
+    NV_PRINTF(LEVEL_INFO, "Buffer allocated from ctx buf pool with page size = 0x%llx\n", pageSize);
     return NV_OK;
 }
 
@@ -449,7 +462,7 @@ ctxBufPoolFree
     NV_ASSERT_OR_RETURN(pCtxBufPool != NULL, NV_ERR_INVALID_ARGUMENT);
     NV_ASSERT_OR_RETURN(pMemDesc != NULL, NV_ERR_INVALID_ARGUMENT);
 
-    NvU32 pageSize = memdescGetPageSize(pMemDesc, AT_GPU);
+    NvU64 pageSize = memdescGetPageSize(pMemDesc, AT_GPU);
 
     //
     // If buffer is contiguous, then it may or may not be allocated from the same pool
@@ -488,21 +501,20 @@ ctxBufPoolFree
     if (rmMemPoolIsScrubSkipped(pPool))
     {
         OBJGPU *pGpu = pMemDesc->pGpu;
-        NvU8   *pMem = kbusMapRmAperture_HAL(pGpu, pMemDesc);
-        if (pMem == NULL)
-        {
-            NV_PRINTF(LEVEL_ERROR, "Failed to BAR2 map memdesc. memory won't be scrubbed\n");
-            NV_ASSERT(pMem != NULL);
-        }
-        else
-        {
-            portMemSet(pMem, 0, (pMemDesc->PageCount * RM_PAGE_SIZE));
-            kbusUnmapRmAperture_HAL(pGpu, pMemDesc, &pMem, NV_TRUE);
-        }
+        MemoryManager *pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+        TRANSFER_SURFACE surf = {0};
+
+        surf.pMemDesc = pMemDesc;
+        surf.offset = 0;
+
+        NV_ASSERT_OK_OR_RETURN(
+            memmgrMemSet(pMemoryManager, &surf, 0,
+                         pMemDesc->PageCount * RM_PAGE_SIZE,
+                         TRANSFER_FLAGS_NONE));
     }
     rmMemPoolFree(pPool, (RM_POOL_ALLOC_MEMDESC*)pMemDesc, 0);
 
-    NV_PRINTF(LEVEL_INFO, "Buffer freed from ctx buf pool with page size = 0x%x\n", pageSize);
+    NV_PRINTF(LEVEL_INFO, "Buffer freed from ctx buf pool with page size = 0x%llx\n", pageSize);
     return NV_OK;
 }
 
@@ -572,12 +584,12 @@ ctxBufPoolGetSizeAndPageSize
     RM_ATTR_PAGE_SIZE  attr,
     NvBool             bContig,
     NvU64             *pSize,
-    NvU32             *pPageSize
+    NvU64             *pPageSize
 )
 {
     MemoryManager          *pMemoryManager      = GPU_GET_MEMORY_MANAGER(pGpu);
     NV_STATUS               status              = NV_OK;
-    NvU32                   pageSize            = 0;
+    NvU64                   pageSize            = 0;
     NvU32                   allocFlags          = 0;
     NvU32                   retAttr             = 0;
     NvU32                   retAttr2            = 0;
@@ -679,7 +691,7 @@ ctxBufPoolGetSizeAndPageSize
 
     *pPageSize = pageSize;
     *pSize = size;
-    NV_PRINTF(LEVEL_INFO, "Buffer updated size = 0x%llx with page size = 0x%x\n", size, pageSize);
+    NV_PRINTF(LEVEL_INFO, "Buffer updated size = 0x%llx with page size = 0x%llx\n", size, pageSize);
     return status;
 }
 

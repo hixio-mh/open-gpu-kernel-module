@@ -355,6 +355,7 @@ enum NvKmsModeValidationOverrides {
     NVKMS_MODE_VALIDATION_REQUIRE_BOOT_CLOCKS                = (1 << 16),
     NVKMS_MODE_VALIDATION_ALLOW_DP_INTERLACED                = (1 << 17),
     NVKMS_MODE_VALIDATION_NO_INTERLACED_MODES                = (1 << 18),
+    NVKMS_MODE_VALIDATION_MAX_ONE_HARDWARE_HEAD              = (1 << 19),
 };
 
 /*!
@@ -1277,9 +1278,6 @@ struct NvKmsQueryConnectorStaticDataReply {
     NvKmsConnectorSignalFormat signalFormat;
     NvU32 physicalIndex;
     NvU32 physicalLocation;
-
-    /* Bitmask of valid heads to drive dpy(s) on this connector. */
-    NvU32 headMask;
 };
 
 struct NvKmsQueryConnectorStaticDataParams {
@@ -1343,6 +1341,8 @@ struct NvKmsQueryDpyStaticDataReply {
     char dpAddress[NVKMS_DP_ADDRESS_STRING_LENGTH];
     NvBool mobileInternal;
     NvBool isDpMST;
+    /* Bitmask of valid heads to drive this dpy. */
+    NvU32 headMask;
 };
 
 struct NvKmsQueryDpyStaticDataParams {
@@ -1930,13 +1930,7 @@ struct NvKmsSetModeOneHeadReply {
      */
     enum NvKmsSetModeOneHeadStatus status;
 
-    /*!
-     * The identifier that we use to talk to RM about the display
-     * device(s) driven by this head.  For DP MST, it is the identifier
-     * of the DisplayPort library group to which the MST device belongs.
-     * Otherwise, it is the identifier of the connector.
-     */
-    NvU32 activeRmId;
+    NvU32 hwHead;
 
     /*!
      * The usage bounds that may be possible on this head based on the ISO
@@ -1981,6 +1975,7 @@ enum NvKmsSetModeOneDispStatus {
     NVKMS_SET_MODE_ONE_DISP_STATUS_FAILED_DISPLAY_PORT_BANDWIDTH_CHECK = 3,
     NVKMS_SET_MODE_ONE_DISP_STATUS_INCOMPATIBLE_DPYS = 4,
     NVKMS_SET_MODE_ONE_DISP_STATUS_DUPLICATE_DPYS = 5,
+    NVKMS_SET_MODE_ONE_DISP_STATUS_FAILED_TO_ASSIGN_HARDWARE_HEADS = 6,
 };
 
 struct NvKmsSetModeOneDispReply {
@@ -2120,24 +2115,25 @@ struct NvKmsIdleBaseChannelParams {
 /*!
  * NVKMS_IOCTL_FLIP: Flip one or more heads on the subdevices of a device.
  *
- * At least one head on one subdevice must be specified in a flip request.
+ * At least one head must be specified in a flip request, and at most
+ * NV_MAX_FLIP_REQUEST_HEADS may be specified.
  */
 
-struct NvKmsFlipRequestOneSubDevice {
-    /*!
-     * The bit mask of which head[] elements to look at on this disp.
-     */
-    NvU32 requestedHeadsBitMask;
-    struct NvKmsFlipCommonParams head[NVKMS_MAX_HEADS_PER_DISP];
+struct NvKmsFlipRequestOneHead {
+    NvU32 sd;
+    NvU32 head;
+    struct NvKmsFlipCommonParams flip;
 };
+
+#define NV_MAX_FLIP_REQUEST_HEADS (NV_MAX_SUBDEVICES * NV_MAX_HEADS)
 
 struct NvKmsFlipRequest {
     NvKmsDeviceHandle deviceHandle;
 
-    /*
-     * sd[n] corresponds to bit N in NvKmsAllocDeviceReply::subDeviceMask.
-     */
-    struct NvKmsFlipRequestOneSubDevice sd[NVKMS_MAX_SUBDEVICES];
+    /* Pointer to an array of length 'numFlipHeads'; each entry in the array is
+     * of type 'struct NvKmsFlipRequestOneHead'. */
+    NvU64 pFlipHead NV_ALIGN_BYTES(8);
+    NvU32 numFlipHeads;
 
     /*!
      * When a flip request is made, NVKMS will first perform
@@ -2166,10 +2162,6 @@ enum NvKmsVrrFlipType {
     NV_KMS_VRR_FLIP_ADAPTIVE_SYNC,
 };
 
-struct NvKmsFlipReplyOneSubDevice {
-    struct NvKmsFlipCommonReplyOneHead head[NVKMS_MAX_HEADS_PER_DISP];
-};
-
 struct NvKmsFlipReply {
     /*!
      * If vrrFlipType != NV_KMS_VRR_FLIP_NON_VRR, then VRR was used for the
@@ -2189,9 +2181,10 @@ struct NvKmsFlipReply {
     enum NvKmsVrrFlipType vrrFlipType;
 
     /*!
-     * sd[n] corresponds to bit N in NvKmsAllocDeviceReply::subDeviceMask.
+     * Entries correspond to the heads specified in
+     * NvKmsFlipRequest::pFlipHead, in the same order.
      */
-    struct NvKmsFlipReplyOneSubDevice sd[NVKMS_MAX_SUBDEVICES];
+    struct NvKmsFlipCommonReplyOneHead flipHead[NV_MAX_FLIP_REQUEST_HEADS];
 };
 
 struct NvKmsFlipParams {
@@ -2520,6 +2513,7 @@ enum NvKmsAttributeType {
 enum NvKmsDpyAttribute {
     NV_KMS_DPY_ATTRIBUTE_BACKLIGHT_BRIGHTNESS = 0,
     NV_KMS_DPY_ATTRIBUTE_SCANLINE,
+    NV_KMS_DPY_ATTRIBUTE_HW_HEAD,
     NV_KMS_DPY_ATTRIBUTE_HEAD,
     NV_KMS_DPY_ATTRIBUTE_REQUESTED_DITHERING,
     NV_KMS_DPY_ATTRIBUTE_REQUESTED_DITHERING_MODE,
@@ -2558,6 +2552,8 @@ enum NvKmsDpyAttribute {
     NV_KMS_DPY_ATTRIBUTE_DISPLAYPORT_CONNECTOR_TYPE,
     NV_KMS_DPY_ATTRIBUTE_DISPLAYPORT_IS_MULTISTREAM,
     NV_KMS_DPY_ATTRIBUTE_DISPLAYPORT_SINK_IS_AUDIO_CAPABLE,
+
+    NV_KMS_DPY_ATTRIBUTE_NUMBER_OF_HARDWARE_HEADS_USED,
 };
 
 /*! Values for the NV_KMS_DPY_ATTRIBUTE_REQUESTED_DITHERING attribute. */
@@ -2603,7 +2599,6 @@ enum NvKmsDpyAttributeCurrentColorSpaceValue {
     NV_KMS_DPY_ATTRIBUTE_CURRENT_COLOR_SPACE_YCbCr422 = 1,
     NV_KMS_DPY_ATTRIBUTE_CURRENT_COLOR_SPACE_YCbCr444 = 2,
     NV_KMS_DPY_ATTRIBUTE_CURRENT_COLOR_SPACE_YCbCr420 = 3,
-    NV_KMS_DPY_ATTRIBUTE_CURRENT_COLOR_SPACE_BT2020RGB = 4,
 };
 
 /*! Values for the NV_KMS_DPY_ATTRIBUTE_DIGITAL_SIGNAL attribute. */
@@ -2828,6 +2823,8 @@ enum NvKmsFrameLockAttribute {
     NV_KMS_FRAMELOCK_ATTRIBUTE_SYNC_RATE,
     NV_KMS_FRAMELOCK_ATTRIBUTE_SYNC_RATE_4,
     NV_KMS_FRAMELOCK_ATTRIBUTE_INCOMING_HOUSE_SYNC_RATE,
+    NV_KMS_FRAMELOCK_ATTRIBUTE_MULTIPLY_DIVIDE_VALUE,
+    NV_KMS_FRAMELOCK_ATTRIBUTE_MULTIPLY_DIVIDE_MODE,
 };
 
 /*! Values for the NV_KMS_FRAMELOCK_ATTRIBUTE_POLARITY attribute. */
@@ -2863,6 +2860,12 @@ enum NvKmsFrameLockAttributeVideoModeValue {
 enum NvKmsFrameLockAttributePortStatusValue {
     NV_KMS_FRAMELOCK_ATTRIBUTE_PORT_STATUS_INPUT = 0,
     NV_KMS_FRAMELOCK_ATTRIBUTE_PORT_STATUS_OUTPUT = 1,
+};
+
+/*! Values for the NV_KMS_FRAMELOCK_ATTRIBUTE_MULTIPLY_DIVIDE_MODE attribute. */
+enum NvKmsFrameLockAttributeMulDivModeValue {
+    NV_KMS_FRAMELOCK_ATTRIBUTE_MULTIPLY_DIVIDE_MODE_MULTIPLY = 0,
+    NV_KMS_FRAMELOCK_ATTRIBUTE_MULTIPLY_DIVIDE_MODE_DIVIDE = 1,
 };
 
 struct NvKmsSetFrameLockAttributeRequest {
@@ -3243,13 +3246,10 @@ struct NvKmsReleaseOwnershipParams {
  *   permissions.
  *
  * - The modeset owner can optionally revoke any previously granted
- *   permissions with NVKMS_IOCTL_REVOKE_PERMISSIONS.
+ *   permissions with NVKMS_IOCTL_REVOKE_PERMISSIONS. This can be 
+ *   device-scope for all of a type, or just a set of permissions.
  *
  * Notes:
- *
- * - NVKMS_IOCTL_REVOKE_PERMISSIONS has device-scope.  It could be
- *   made finer-grained (e.g., take the file descriptor that was used
- *   to grant permissions) if that were needed.
  *
  * - NvKmsPermissions::disp[n] corresponds to the disp named by
  *   NvKmsAllocDeviceReply::dispHandles[n].
@@ -3357,10 +3357,15 @@ struct NvKmsRevokePermissionsRequest {
 
     /*
      * A bitmask of permission types to be revoked for this device.
-     * It should be the bitwise 'or' of one or more
+     * It should be the bitwise 'or' of any number of
      * NVBIT(NV_KMS_PERMISSIONS_TYPE_*) values.
      */
     NvU32 permissionsTypeBitmask;
+
+    /*
+     * If permissionsTypeBitmask is 0, instead revoke only these permissions.
+     */
+    struct NvKmsPermissions permissions;
 };
 
 struct NvKmsRevokePermissionsReply {

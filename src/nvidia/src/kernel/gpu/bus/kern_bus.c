@@ -393,10 +393,14 @@ kbusCommitBar2_KERNEL
     NvU32      flags
 )
 {
-    // we will initialize bar2 to the default big page size of the system
-    NV_ASSERT_OK_OR_RETURN(kbusInitVirtualBar2_HAL(pGpu, pKernelBus));
-    NV_ASSERT_OK_OR_RETURN(kbusSetupCpuPointerForBusFlush_HAL(pGpu, pKernelBus));
-
+    if (!KBUS_BAR0_PRAMIN_DISABLED(pGpu) &&
+        !kbusIsBarAccessBlocked(pKernelBus) &&
+        !(flags & GPU_STATE_FLAGS_GC6_TRANSITION))
+    {
+        // we will initialize bar2 to the default big page size of the system
+        NV_ASSERT_OK_OR_RETURN(kbusInitVirtualBar2_HAL(pGpu, pKernelBus));
+        NV_ASSERT_OK_OR_RETURN(kbusSetupCpuPointerForBusFlush_HAL(pGpu, pKernelBus));
+    }
     return NV_OK;
 }
 
@@ -715,10 +719,14 @@ kbusPatchBar2Pdb_GSPCLIENT
     KernelBus   *pKernelBus
 )
 {
-    NV_STATUS            status = NV_OK;
+    NV_STATUS            status   = NV_OK;
     PMEMORY_DESCRIPTOR   pMemDesc;
-    GspStaticConfigInfo *pGSCI  = GPU_GET_GSP_STATIC_INFO(pGpu);
+    GspStaticConfigInfo *pGSCI    = GPU_GET_GSP_STATIC_INFO(pGpu);
+    const MMU_FMT_LEVEL *pRootFmt = pKernelBus->bar2[GPU_GFID_PF].pFmt->pRoot;
     NvU64                entryValue;
+    MEMORY_DESCRIPTOR   *pOldPdb;
+
+    pOldPdb = pKernelBus->virtualBar2[GPU_GFID_PF].pPDB;
 
     NV_CHECK_OK_OR_RETURN(LEVEL_ERROR,
         memdescCreate(&pMemDesc, pGpu, pKernelBus->bar2[GPU_GFID_PF].pageDirSize, RM_PAGE_SIZE, NV_TRUE,
@@ -731,16 +739,32 @@ kbusPatchBar2Pdb_GSPCLIENT
 
     //
     // BAR2 page table is not yet working at this point, so retrieving the
-    // PDE3[0] of BAR2 page table via BAR0_WINDOW
+    // PDE3[0] of BAR2 page table via BAR0_WINDOW or GSP-DMA (in case BARs
+    // are blocked)
     //
-    entryValue = GPU_REG_RD32(pGpu, (NvU32)pKernelBus->bar2[GPU_GFID_PF].bar2OffsetInBar0Window) |
+    if (kbusIsBarAccessBlocked(pKernelBus))
+    {
+        MemoryManager *pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+        TRANSFER_SURFACE surf = {0};
+
+        surf.pMemDesc = pOldPdb;
+        surf.offset = 0;
+
+        NV_ASSERT_OK_OR_RETURN(
+            memmgrMemRead(pMemoryManager, &surf, &entryValue,
+                          pRootFmt->entrySize, TRANSFER_FLAGS_NONE));
+    }
+    else
+    {
+        entryValue = GPU_REG_RD32(pGpu, (NvU32)pKernelBus->bar2[GPU_GFID_PF].bar2OffsetInBar0Window) |
                  ((NvU64)GPU_REG_RD32(pGpu, (NvU32)pKernelBus->bar2[GPU_GFID_PF].bar2OffsetInBar0Window + 4) << 32);
+    }
 
     //
     // Provide the PDE3[0] value to GSP-RM so that GSP-RM can merge CPU-RM's
     // page table to GSP-RM's page table
     //
-    NV_RM_RPC_UPDATE_BAR_PDE(pGpu, NV_RPC_UPDATE_PDE_BAR_2, entryValue, pKernelBus->bar2[GPU_GFID_PF].pFmt->pRoot->virtAddrBitLo, status);
+    NV_RM_RPC_UPDATE_BAR_PDE(pGpu, NV_RPC_UPDATE_PDE_BAR_2, entryValue, pRootFmt->virtAddrBitLo, status);
 
     return NV_OK;
 }
@@ -768,9 +792,9 @@ kbusPatchBar2Pdb_GSPCLIENT
 NvBool
 kbusCheckEngine_KERNEL
 (
-    OBJGPU *pGpu,
-    KernelBus *pKernelBus,
-    ENGDESCRIPTOR engDesc
+    OBJGPU        *pGpu,
+    KernelBus     *pKernelBus,
+    ENGDESCRIPTOR  engDesc
 )
 {
     NvU32     rmEngineCaps[NVGPU_ENGINE_CAPS_MASK_ARRAY_MAX] = {0};
@@ -786,15 +810,17 @@ kbusCheckEngine_KERNEL
             return NV_FALSE;
         }
 
-        for (i=0; i<NVGPU_ENGINE_CAPS_MASK_ARRAY_MAX; i++)
+        for (i = 0; i < NVGPU_ENGINE_CAPS_MASK_ARRAY_MAX; i++)
         {
             nv2080EngineCaps[i] = pGSCI->engineCaps[i];
         }
     }
 
     NV_CHECK_OK_OR_ELSE(status, LEVEL_ERROR,
-          gpuGetRmEngineTypeCapMask(nv2080EngineCaps, NVGPU_ENGINE_CAPS_MASK_ARRAY_MAX, rmEngineCaps),
-          return NV_FALSE);
+        gpuGetRmEngineTypeCapMask(nv2080EngineCaps,
+                                  NVGPU_ENGINE_CAPS_MASK_ARRAY_MAX,
+                                  rmEngineCaps),
+        return NV_FALSE);
 
     switch (engDesc)
     {
@@ -810,10 +836,7 @@ kbusCheckEngine_KERNEL
         // (b) RM offload (Kernel RM) where display is supported.
         //
         case ENG_KERNEL_DISPLAY:
-            if (IS_GSP_CLIENT(pGpu))
-                return NV_TRUE;
-            else
-                return NV_FALSE;
+            return IS_GSP_CLIENT(pGpu);
 
         case ENG_BIF:
         case ENG_KERNEL_BIF:
@@ -833,67 +856,51 @@ kbusCheckEngine_KERNEL
             return NV_TRUE;
 
         case ENG_CE(0):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY0) ? NV_TRUE: NV_FALSE);
         case ENG_CE(1):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY1) ? NV_TRUE: NV_FALSE);
         case ENG_CE(2):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY2) ? NV_TRUE: NV_FALSE);
         case ENG_CE(3):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY3) ? NV_TRUE: NV_FALSE);
         case ENG_CE(4):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY4) ? NV_TRUE: NV_FALSE);
         case ENG_CE(5):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY5) ? NV_TRUE: NV_FALSE);
         case ENG_CE(6):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY6) ? NV_TRUE: NV_FALSE);
         case ENG_CE(7):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY7) ? NV_TRUE: NV_FALSE);
         case ENG_CE(8):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY8) ? NV_TRUE: NV_FALSE);
         case ENG_CE(9):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_COPY9) ? NV_TRUE: NV_FALSE);
+            return !!NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps,
+                RM_ENGINE_TYPE_COPY(GET_CE_IDX(engDesc)));
+
         case ENG_MSENC(0):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVENC0) ? NV_TRUE: NV_FALSE);
         case ENG_MSENC(1):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVENC1) ? NV_TRUE: NV_FALSE);
         case ENG_MSENC(2):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVENC2) ? NV_TRUE: NV_FALSE);
+            return !!NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps,
+                RM_ENGINE_TYPE_NVENC(GET_MSENC_IDX(engDesc)));
         case ENG_SEC2:
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_SEC2) ? NV_TRUE: NV_FALSE);
+            return !!NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps,
+                                                RM_ENGINE_TYPE_SEC2);
         case ENG_NVDEC(0):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC0) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(1):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC1) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(2):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC2) ? NV_TRUE: NV_FALSE);
-        case ENG_OFA:
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_OFA) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(3):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC3) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(4):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC4) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(5):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC5) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(6):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC6) ? NV_TRUE: NV_FALSE);
         case ENG_NVDEC(7):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVDEC7) ? NV_TRUE: NV_FALSE);
+            return !!NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps,
+                RM_ENGINE_TYPE_NVDEC(GET_NVDEC_IDX(engDesc)));
+
+        case ENG_OFA:
+            return !!NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps,
+                                                RM_ENGINE_TYPE_OFA);
         case ENG_NVJPEG(0):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG0) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(1):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG1) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(2):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG2) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(3):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG3) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(4):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG4) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(5):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG5) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(6):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG6) ? NV_TRUE: NV_FALSE);
         case ENG_NVJPEG(7):
-                return (NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps, RM_ENGINE_TYPE_NVJPEG7) ? NV_TRUE: NV_FALSE);
+            return !!NVGPU_GET_ENGINE_CAPS_MASK(rmEngineCaps,
+                RM_ENGINE_TYPE_NVJPEG(GET_NVJPEG_IDX(engDesc)));
+
         case ENG_GR(1):
         case ENG_GR(2):
         case ENG_GR(3):
@@ -906,10 +913,10 @@ kbusCheckEngine_KERNEL
 
             NV_ASSERT_OR_RETURN(pKernelFifo != NULL, NV_FALSE);
 
-            if (kfifoCheckEngine_HAL(pGpu, pKernelFifo, engDesc, &bSupported) == NV_OK)
-                return bSupported;
-            else
-                return NV_FALSE;
+            return (kfifoCheckEngine_HAL(pGpu, pKernelFifo,
+                                         engDesc,
+                                         &bSupported) == NV_OK &&
+                    bSupported);
         }
 
         case ENG_INVALID:
@@ -956,24 +963,17 @@ kbusGetDeviceCaps_IMPL
     OBJSYS *pSys = SYS_GET_INSTANCE();
     OBJCL  *pCl  = SYS_GET_CL(pSys);
     NvU8 tempCaps[NV0080_CTRL_HOST_CAPS_TBL_SIZE], temp;
-    NvBool bVirtualP2P;
     NvBool bExplicitCacheFlushRequired;
 
     NV_ASSERT(!gpumgrGetBcEnabledStatus(pGpu));
 
     portMemSet(tempCaps, 0, NV0080_CTRL_HOST_CAPS_TBL_SIZE);
 
-    /*! On KEPLER+, mailbox protocol based P2P transactions goes through virtual to
-     *  physical translation (on request side) */
-    bVirtualP2P = IsdMAXWELLorBetter(pGpu);
-    if (bVirtualP2P)
-        RMCTRL_SET_CAP(tempCaps, NV0080_CTRL_HOST_CAPS, _VIRTUAL_P2P);
-
     /*! DMAs to/from cached memory need to have the cache flushed explicitly */
-    bExplicitCacheFlushRequired = NVCPU_IS_ARM && 
+    bExplicitCacheFlushRequired = NVCPU_IS_ARM &&
                                   (RMCFG_FEATURE_PLATFORM_UNIX || RMCFG_FEATURE_PLATFORM_MODS_UNIX);
     if (bExplicitCacheFlushRequired ||
-        (!pCl->getProperty(pCL, PDB_PROP_CL_IS_CHIPSET_IO_COHERENT)))
+        (!pCl->getProperty(pCl, PDB_PROP_CL_IS_CHIPSET_IO_COHERENT)))
         RMCTRL_SET_CAP(tempCaps, NV0080_CTRL_HOST_CAPS, _EXPLICIT_CACHE_FLUSH_REQD);
 
     if ((pCl->FHBBusInfo.vendorID == PCI_VENDOR_ID_NVIDIA) &&
@@ -999,8 +999,6 @@ kbusGetDeviceCaps_IMPL
                    NV0080_CTRL_HOST_CAPS, _P2P_4_WAY);
     RMCTRL_AND_CAP(pHostCaps, tempCaps, temp,
                    NV0080_CTRL_HOST_CAPS, _P2P_8_WAY);
-    RMCTRL_AND_CAP(pHostCaps, tempCaps, temp,
-                   NV0080_CTRL_HOST_CAPS, _VIRTUAL_P2P);
     RMCTRL_AND_CAP(pHostCaps, tempCaps, temp,
                    NV0080_CTRL_HOST_CAPS, _GPU_COHERENT_MAPPING_SUPPORTED);
 
@@ -1043,7 +1041,8 @@ kbusMapFbApertureByHandle_IMPL
     NvHandle   hMemory,
     NvU64      offset,
     NvU64      size,
-    NvU64     *pBar1Va
+    NvU64     *pBar1Va,
+    Device    *pDevice
 )
 {
     NV_STATUS status;
@@ -1077,7 +1076,7 @@ kbusMapFbApertureByHandle_IMPL
 
     status = kbusMapFbAperture_HAL(pGpu, pKernelBus, pMemDesc, offset,
                                    &fbApertureOffset, &fbApertureLength,
-                                   BUS_MAP_FB_FLAGS_MAP_UNICAST, hClient);
+                                   BUS_MAP_FB_FLAGS_MAP_UNICAST, pDevice);
     if (status != NV_OK)
     {
         return status;
@@ -1209,9 +1208,16 @@ kbusGetNvlinkP2PPeerId_VGPU
     KernelBus *pKernelBus0,
     OBJGPU    *pGpu1,
     KernelBus *pKernelBus1,
-    NvU32     *nvlinkPeer
+    NvU32     *nvlinkPeer,
+    NvU32      flags
 )
 {
+    *nvlinkPeer = kbusGetPeerId_HAL(pGpu0, pKernelBus0, pGpu1);
+    if (*nvlinkPeer != BUS_INVALID_PEER)
+    {
+        return NV_OK;
+    }
+
     *nvlinkPeer = kbusGetUnusedPeerId_HAL(pGpu0, pKernelBus0);
 
     // If could not find a free peer ID, return error

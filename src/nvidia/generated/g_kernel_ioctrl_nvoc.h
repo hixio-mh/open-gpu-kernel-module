@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -47,7 +47,7 @@ extern "C" {
 
 /*!
  * KernelIoctrl is a logical abstraction of the GPU Ioctrl Engine. The
- * Public API of the Ioctrl Engine is exposed through this object, and 
+ * Public API of the Ioctrl Engine is exposed through this object, and
  * any interfaces which do not manage the underlying Ioctrl hardware
  * can be managed by this object.
  */
@@ -65,7 +65,6 @@ struct KernelIoctrl {
     NV_STATUS (*__kioctrlConstructEngine__)(struct OBJGPU *, struct KernelIoctrl *, NvU32);
     NvBool (*__kioctrlGetMinionEnableDefault__)(struct OBJGPU *, struct KernelIoctrl *);
     NV_STATUS (*__kioctrlMinionConstruct__)(struct OBJGPU *, struct KernelIoctrl *);
-    NV_STATUS (*__kioctrlReconcileTunableState__)(POBJGPU, struct KernelIoctrl *, void *);
     NV_STATUS (*__kioctrlStateLoad__)(POBJGPU, struct KernelIoctrl *, NvU32);
     NV_STATUS (*__kioctrlStateUnload__)(POBJGPU, struct KernelIoctrl *, NvU32);
     NV_STATUS (*__kioctrlStateInitLocked__)(POBJGPU, struct KernelIoctrl *);
@@ -77,23 +76,18 @@ struct KernelIoctrl {
     void (*__kioctrlInitMissing__)(POBJGPU, struct KernelIoctrl *);
     NV_STATUS (*__kioctrlStatePreInitLocked__)(POBJGPU, struct KernelIoctrl *);
     NV_STATUS (*__kioctrlStatePreInitUnlocked__)(POBJGPU, struct KernelIoctrl *);
-    NV_STATUS (*__kioctrlGetTunableState__)(POBJGPU, struct KernelIoctrl *, void *);
-    NV_STATUS (*__kioctrlCompareTunableState__)(POBJGPU, struct KernelIoctrl *, void *, void *);
-    void (*__kioctrlFreeTunableState__)(POBJGPU, struct KernelIoctrl *, void *);
     NV_STATUS (*__kioctrlStatePostLoad__)(POBJGPU, struct KernelIoctrl *, NvU32);
-    NV_STATUS (*__kioctrlAllocTunableState__)(POBJGPU, struct KernelIoctrl *, void **);
-    NV_STATUS (*__kioctrlSetTunableState__)(POBJGPU, struct KernelIoctrl *, void *);
     NvBool (*__kioctrlIsPresent__)(POBJGPU, struct KernelIoctrl *);
     NvBool PDB_PROP_KIOCTRL_MINION_AVAILABLE;
     NvBool PDB_PROP_KIOCTRL_MINION_FORCE_BOOT;
     NvBool PDB_PROP_KIOCTRL_MINION_CACHE_SEEDS;
-    NvU32 PublicId;
-    NvU32 localDiscoveredLinks;
-    NvU32 localGlobalLinkOffset;
-    NvU32 ipVerIoctrl;
-    NvU32 ipVerMinion;
-    NvU32 ioctrlDiscoverySize;
-    NvU8 numDevices;
+    NvU32 PRIVATE_FIELD(PublicId);
+    NvU32 PRIVATE_FIELD(localDiscoveredLinks);
+    NvU32 PRIVATE_FIELD(localGlobalLinkOffset);
+    NvU32 PRIVATE_FIELD(ipVerIoctrl);
+    NvU32 PRIVATE_FIELD(ipVerMinion);
+    NvU32 PRIVATE_FIELD(ioctrlDiscoverySize);
+    NvU8 PRIVATE_FIELD(numDevices);
 };
 
 #ifndef __NVOC_CLASS_KernelIoctrl_TYPEDEF__
@@ -137,7 +131,6 @@ NV_STATUS __nvoc_objCreate_KernelIoctrl(KernelIoctrl**, Dynamic*, NvU32);
 #define kioctrlGetMinionEnableDefault_HAL(pGpu, pKernelIoctrl) kioctrlGetMinionEnableDefault_DISPATCH(pGpu, pKernelIoctrl)
 #define kioctrlMinionConstruct(pGpu, pKernelIoctrl) kioctrlMinionConstruct_DISPATCH(pGpu, pKernelIoctrl)
 #define kioctrlMinionConstruct_HAL(pGpu, pKernelIoctrl) kioctrlMinionConstruct_DISPATCH(pGpu, pKernelIoctrl)
-#define kioctrlReconcileTunableState(pGpu, pEngstate, pTunableState) kioctrlReconcileTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
 #define kioctrlStateLoad(pGpu, pEngstate, arg0) kioctrlStateLoad_DISPATCH(pGpu, pEngstate, arg0)
 #define kioctrlStateUnload(pGpu, pEngstate, arg0) kioctrlStateUnload_DISPATCH(pGpu, pEngstate, arg0)
 #define kioctrlStateInitLocked(pGpu, pEngstate) kioctrlStateInitLocked_DISPATCH(pGpu, pEngstate)
@@ -149,12 +142,7 @@ NV_STATUS __nvoc_objCreate_KernelIoctrl(KernelIoctrl**, Dynamic*, NvU32);
 #define kioctrlInitMissing(pGpu, pEngstate) kioctrlInitMissing_DISPATCH(pGpu, pEngstate)
 #define kioctrlStatePreInitLocked(pGpu, pEngstate) kioctrlStatePreInitLocked_DISPATCH(pGpu, pEngstate)
 #define kioctrlStatePreInitUnlocked(pGpu, pEngstate) kioctrlStatePreInitUnlocked_DISPATCH(pGpu, pEngstate)
-#define kioctrlGetTunableState(pGpu, pEngstate, pTunableState) kioctrlGetTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
-#define kioctrlCompareTunableState(pGpu, pEngstate, pTunables1, pTunables2) kioctrlCompareTunableState_DISPATCH(pGpu, pEngstate, pTunables1, pTunables2)
-#define kioctrlFreeTunableState(pGpu, pEngstate, pTunableState) kioctrlFreeTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
 #define kioctrlStatePostLoad(pGpu, pEngstate, arg0) kioctrlStatePostLoad_DISPATCH(pGpu, pEngstate, arg0)
-#define kioctrlAllocTunableState(pGpu, pEngstate, ppTunableState) kioctrlAllocTunableState_DISPATCH(pGpu, pEngstate, ppTunableState)
-#define kioctrlSetTunableState(pGpu, pEngstate, pTunableState) kioctrlSetTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
 #define kioctrlIsPresent(pGpu, pEngstate) kioctrlIsPresent_DISPATCH(pGpu, pEngstate)
 NV_STATUS kioctrlConstructEngine_IMPL(struct OBJGPU *arg0, struct KernelIoctrl *arg1, NvU32 arg2);
 
@@ -180,10 +168,6 @@ NV_STATUS kioctrlMinionConstruct_GV100(struct OBJGPU *pGpu, struct KernelIoctrl 
 
 static inline NV_STATUS kioctrlMinionConstruct_DISPATCH(struct OBJGPU *pGpu, struct KernelIoctrl *pKernelIoctrl) {
     return pKernelIoctrl->__kioctrlMinionConstruct__(pGpu, pKernelIoctrl);
-}
-
-static inline NV_STATUS kioctrlReconcileTunableState_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    return pEngstate->__kioctrlReconcileTunableState__(pGpu, pEngstate, pTunableState);
 }
 
 static inline NV_STATUS kioctrlStateLoad_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, NvU32 arg0) {
@@ -230,28 +214,8 @@ static inline NV_STATUS kioctrlStatePreInitUnlocked_DISPATCH(POBJGPU pGpu, struc
     return pEngstate->__kioctrlStatePreInitUnlocked__(pGpu, pEngstate);
 }
 
-static inline NV_STATUS kioctrlGetTunableState_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    return pEngstate->__kioctrlGetTunableState__(pGpu, pEngstate, pTunableState);
-}
-
-static inline NV_STATUS kioctrlCompareTunableState_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunables1, void *pTunables2) {
-    return pEngstate->__kioctrlCompareTunableState__(pGpu, pEngstate, pTunables1, pTunables2);
-}
-
-static inline void kioctrlFreeTunableState_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    pEngstate->__kioctrlFreeTunableState__(pGpu, pEngstate, pTunableState);
-}
-
 static inline NV_STATUS kioctrlStatePostLoad_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, NvU32 arg0) {
     return pEngstate->__kioctrlStatePostLoad__(pGpu, pEngstate, arg0);
-}
-
-static inline NV_STATUS kioctrlAllocTunableState_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void **ppTunableState) {
-    return pEngstate->__kioctrlAllocTunableState__(pGpu, pEngstate, ppTunableState);
-}
-
-static inline NV_STATUS kioctrlSetTunableState_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    return pEngstate->__kioctrlSetTunableState__(pGpu, pEngstate, pTunableState);
 }
 
 static inline NvBool kioctrlIsPresent_DISPATCH(POBJGPU pGpu, struct KernelIoctrl *pEngstate) {

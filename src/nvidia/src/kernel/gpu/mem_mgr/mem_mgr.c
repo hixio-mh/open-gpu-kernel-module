@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -25,10 +25,12 @@
 #include "gpu/mem_mgr/heap.h"
 #include "gpu/mem_sys/kern_mem_sys.h"
 #include "gpu/mem_mgr/mem_utils.h"
+#include "gpu/mem_mgr/ce_utils.h"
 #include "mem_mgr/video_mem.h"
 #include "gpu/mem_mgr/fbsr.h"
 #include "gpu/mmu/kern_gmmu.h"
 #include "gpu/bus/kern_bus.h"
+#include "gpu/bif/kernel_bif.h"
 #include "core/locks.h"
 #include "virtualization/kernel_vgpu_mgr.h"
 #include "vgpu/rpc.h"
@@ -43,6 +45,11 @@
 #include "class/cl0040.h" // NV01_MEMORY_LOCAL_USER
 #include "class/cl503c.h"
 #include "class/cl906f.h" // GF100_CHANNEL_GPFIFO
+#include "os/os.h"
+#include "gpu/gsp/kernel_gsp.h"
+#include "gpu/conf_compute/conf_compute.h"
+
+#include "class/cl0050.h"
 
 static NV_STATUS _memmgrCreateFBSR(MemoryManager *pMemoryManager, NvU32);
 static NV_STATUS _memmgrCreateChildObjects(MemoryManager *pMemoryManager);
@@ -108,7 +115,7 @@ _memmgrInitRegistryOverrides(OBJGPU *pGpu, MemoryManager *pMemoryManager)
     NvU32 data32;
 
     // Check for ram size override.
-    pMemoryManager->Ram.fbOverrideSizeMb = ~0;
+    pMemoryManager->Ram.fbOverrideSizeMb = (NvU64)~0;
     if ((osReadRegistryDword(pGpu, NV_REG_STR_OVERRIDE_FB_SIZE, &data32) == NV_OK) &&
         (data32 != 0))
     {
@@ -266,6 +273,16 @@ memmgrStatePreInitLocked_IMPL
     MemoryManager *pMemoryManager
 )
 {
+    if (IS_GSP_CLIENT(pGpu))
+    {
+        //
+        // Temporary hack to get OpenRM working without breaking SLI
+        // After fixing CORERM-4078, memmgrInitFbRegions() call should be removed from memsysStateInitLocked()
+        // and only left here
+        //
+        NV_ASSERT_OK_OR_RETURN(memmgrInitFbRegions(pGpu, pMemoryManager));
+    }
+
     // Determine the size of reserved memory
     NV_ASSERT_OK_OR_RETURN(memmgrPreInitReservedMemory_HAL(pGpu, pMemoryManager));
 
@@ -283,19 +300,10 @@ memmgrStateInitLocked_IMPL
     NvU32     i;
     NvBool    bDynamicPageOffliningDisable = NV_FALSE;
 
-    if (IS_GSP_CLIENT(pGpu))
-    {
-        //
-        // Temporary hack to get OpenRM working without breaking SLI
-        // After fixing CORERM-4078, memmgrInitFbRegions() call should be removed from memsysStateInitLocked()
-        // and only left here
-        //
-        NV_ASSERT_OK_OR_RETURN(memmgrInitFbRegions(pGpu, pMemoryManager));
-    }
-
     NV_ASSERT_OK_OR_RETURN(memmgrInitReservedMemory_HAL(pGpu, pMemoryManager, pMemoryManager->Ram.fbAddrSpaceSizeMb << 20));
 
     _memmgrInitRegistryOverrides(pGpu, pMemoryManager);
+
     //
     // Enable dynamic page blacklisting at this point before we call CreateHeap
     // since it internally calls heapGetBlacklistPages which depends on this property
@@ -396,6 +404,76 @@ memmgrStateInitLocked_IMPL
 }
 
 NV_STATUS
+memmgrVerifyGspDmaOps_IMPL
+(
+    OBJGPU        *pGpu,
+    MemoryManager *pMemoryManager
+)
+{
+    KernelBus *pKernelBus = GPU_GET_KERNEL_BUS(pGpu);
+    NV_STATUS status = NV_OK;
+    MEMORY_DESCRIPTOR *pMemDesc;
+    NvU8 *pTestBuffer;
+    NvU32 testData = 0xdeadbeef;
+    TRANSFER_SURFACE surf = {0};
+
+    //
+    // Return early if CPU access to CPR vidmem is allowed as GSP DMA
+    // is not needed in this case
+    //
+    if (!kbusIsBarAccessBlocked(pKernelBus))
+        return NV_OK;
+
+    pTestBuffer = portMemAllocNonPaged(4096);
+    NV_ASSERT_OR_RETURN(pTestBuffer != NULL, NV_ERR_INSUFFICIENT_RESOURCES);
+
+    portMemSet(pTestBuffer, 0, 4096);
+
+    status = memdescCreate(&pMemDesc, pGpu, RM_PAGE_SIZE, RM_PAGE_SIZE,
+                           NV_TRUE, ADDR_FBMEM, NV_MEMORY_UNCACHED, 0);
+    NV_ASSERT_OR_RETURN(status == NV_OK, status);
+
+    status = memdescAlloc(pMemDesc);
+    NV_ASSERT_OR_GOTO(status == NV_OK, failed);
+
+    surf.pMemDesc = pMemDesc;
+    surf.offset = sizeof(NvU32); // Choosing a random offset
+
+    // Write test data to FB using GSP
+    status = memmgrMemWrite(pMemoryManager, &surf, &testData, sizeof(NvU32),
+                            TRANSFER_FLAGS_NONE);
+    NV_ASSERT_OR_GOTO(status == NV_OK, failed);
+
+    // Read the same location using GSP and confirm that GSP read is also working fine
+    status = memmgrMemRead(pMemoryManager, &surf, pTestBuffer, sizeof(NvU32),
+                           TRANSFER_FLAGS_NONE);
+    NV_ASSERT_OR_GOTO(status == NV_OK, failed);
+
+    if (((NvU32*)pTestBuffer)[0] != testData)
+    {
+        NV_PRINTF(LEVEL_ERROR, "####################################################\n");
+        NV_PRINTF(LEVEL_ERROR, "    Read back of data using GSP shows mismatch\n");
+        NV_PRINTF(LEVEL_ERROR, "    Test data: 0x%x Read Data: 0x%x\n", testData, ((NvU32*)pTestBuffer)[0]);
+        NV_PRINTF(LEVEL_ERROR, "####################################################\n");
+        status = NV_ERR_INVALID_STATE;
+        NV_ASSERT_OR_GOTO(status == NV_OK, failed);
+    }
+    else
+    {
+        NV_PRINTF(LEVEL_INFO, "####################################################\n");
+        NV_PRINTF(LEVEL_INFO, "    Read back of data using GSP confirms write\n");
+        NV_PRINTF(LEVEL_INFO, "####################################################\n");
+    }
+
+failed:
+    memdescFree(pMemDesc);
+    memdescDestroy(pMemDesc);
+    portMemFree(pTestBuffer);
+
+    return status;
+}
+
+NV_STATUS
 memmgrStateLoad_IMPL
 (
     OBJGPU *pGpu,
@@ -416,6 +494,19 @@ memmgrStateLoad_IMPL
         memmgrScrubInit_HAL(pGpu, pMemoryManager);
     }
 
+    if (osNumaOnliningEnabled(pGpu->pOsGpuInfo))
+    {
+        //
+        // NUMA onlined memory size should not exceed memory size assigned to PMA.
+        // TODO : Currently in selfhosted and P9+GV100 systems numaOnlined size is less
+        // than PMA Memory Size. Ideally both of them should be identical. Bug 4051320.
+        //
+        NvU64 pmaTotalMemorySize;
+        NvU64 numaOnlineSize = GPU_GET_KERNEL_MEMORY_SYSTEM(pGpu)->numaOnlineSize;
+        pmaGetTotalMemory(&GPU_GET_HEAP(pGpu)->pmaObject, &pmaTotalMemorySize);
+        NV_ASSERT_OR_RETURN(pmaTotalMemorySize >= numaOnlineSize, NV_ERR_INVALID_STATE);
+    }
+
     // Dump FB regions
     memmgrDumpFbRegions(pGpu, pMemoryManager);
 
@@ -430,7 +521,17 @@ memmgrStatePreUnload_IMPL
     NvU32 flags
 )
 {
+    KernelMemorySystem *pKernelMemorySystem = GPU_GET_KERNEL_MEMORY_SYSTEM(pGpu);
+
     NV_ASSERT((flags & GPU_STATE_FLAGS_PRESERVING) || pMemoryManager->zbcSurfaces == 0);
+
+    if (memmgrIsPmaEnabled(pMemoryManager) &&
+        memmgrIsPmaSupportedOnPlatform(pMemoryManager) &&
+        osNumaOnliningEnabled(pGpu->pOsGpuInfo) &&
+        pKernelMemorySystem->memPartitionNumaInfo[0].bInUse)
+    {
+        pmaNumaOfflined(&pMemoryManager->pHeap->pmaObject);
+    }
 
     return NV_OK;
 }
@@ -514,6 +615,15 @@ memmgrStateDestroy_IMPL
         {
             fbsrDestroy_HAL(pGpu, pMemoryManager->pFbsr[i]);
         }
+    }
+    if (memmgrIsLocalEgmEnabled(pMemoryManager))
+    {
+        if (!IS_VIRTUAL_WITH_SRIOV(pGpu))
+        {
+            kbusUnreserveP2PPeerIds_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu), NVBIT(pMemoryManager->localEgmPeerId));
+        }
+        pMemoryManager->localEgmPeerId = BUS_INVALID_PEER;
+        pMemoryManager->bLocalEgmEnabled = NV_FALSE;
     }
 
     memmgrScrubDestroy_HAL(pGpu, pMemoryManager);
@@ -749,12 +859,21 @@ _memmgrAllocInternalClientObjects
                              failed);
 
         portMemSet(&params, 0, sizeof(params));
-        params.flags = NV503C_ALLOC_PARAMETERS_FLAGS_TYPE_BAR1;
+        if (pGpu->getProperty(pGpu, PDB_PROP_GPU_COHERENT_CPU_MAPPING))
+        {
+            params.flags = NV503C_ALLOC_PARAMETERS_FLAGS_TYPE_NVLINK;
+        }
+        else
+        {
+            params.flags = NV503C_ALLOC_PARAMETERS_FLAGS_TYPE_BAR1;
+        }
         status = pRmApi->AllocWithHandle(pRmApi,
                                          pMemoryManager->hClient,
                                          pMemoryManager->hSubdevice,
                                          hThirdPartyP2P,
-                                         NV50_THIRD_PARTY_P2P, &params);
+                                         NV50_THIRD_PARTY_P2P,
+                                         &params,
+                                         sizeof(params));
         if (status != NV_OK)
         {
             NV_PRINTF(LEVEL_WARNING, "Error creating internal ThirdPartyP2P object: %x\n",
@@ -810,6 +929,19 @@ memmgrGetUsedRamSize_IMPL
     else
     {
         *pFbUsedSize = heapTotalSpace - heapFreeSpace;
+    }
+
+    //
+    // GSP's WPR region has its own save/restore mechanism and does not need
+    // to be accounted for in total FB size used - which is needed to find out
+    // how much SYSMEM needs to be allocated to save all FB memory
+    //
+    if (IS_GSP_CLIENT(pGpu))
+    {
+        KernelGsp *pKernelGsp       = GPU_GET_KERNEL_GSP(pGpu);
+        NvU64      gspWprRegionSize = pKernelGsp->pWprMeta->gspFwWprEnd - pKernelGsp->pWprMeta->gspFwWprStart;
+
+        *pFbUsedSize = *pFbUsedSize - gspWprRegionSize;
     }
 
     return NV_OK;
@@ -1035,6 +1167,8 @@ memmgrFillMemdescForPhysAttr_IMPL
         *pMemAperture = NV0041_CTRL_CMD_GET_SURFACE_PHYS_ATTR_APERTURE_VIDMEM;
     else if (memdescGetAddressSpace(pMemDesc) == ADDR_SYSMEM)
         *pMemAperture = NV0041_CTRL_CMD_GET_SURFACE_PHYS_ATTR_APERTURE_SYSMEM;
+    else if (memdescGetAddressSpace(pMemDesc) == ADDR_EGM)
+        *pMemAperture = NV0041_CTRL_CMD_GET_SURFACE_PHYS_ATTR_APERTURE_SYSMEM;
     else if (memdescGetAddressSpace(pMemDesc) == ADDR_VIRTUAL )
     {
         //
@@ -1090,7 +1224,7 @@ memmgrFillMemdescForPhysAttr_IMPL
     return NV_OK;
 }
 
-NvU32
+NvU64
 memmgrDeterminePageSize_IMPL
 (
     MemoryManager *pMemoryManager,
@@ -1107,7 +1241,7 @@ memmgrDeterminePageSize_IMPL
     NV_ADDRESS_SPACE  addrSpace;
     NvBool            bIsBigPageSupported;
     RM_ATTR_PAGE_SIZE pageSizeAttr;
-    NvU32             pageSize = 0;
+    NvU64             pageSize = 0;
 
     if (pGpu->getProperty(pGpu, PDB_PROP_GPU_TEGRA_SOC_NVDISPLAY) || (pKernelGmmu == NULL))
     {
@@ -1158,6 +1292,7 @@ memmgrDeterminePageSize_IMPL
             {
                 NV_PRINTF(LEVEL_ERROR,
                           "Big/Huge/512MB page size not supported in sysmem.\n");
+
                 NV_ASSERT_OR_RETURN(0, 0);
             }
             else
@@ -1447,6 +1582,8 @@ memmgrCalcReservedFbSpace_IMPL
     NvU32   idxSlowRegion = 0;
     NvBool  bAllocProtected = NV_FALSE;
 
+    bAllocProtected = gpuIsCCFeatureEnabled(pGpu);
+
     //
     // This is a hack solely for Vista (on Vista the OS controls the majority of heap).
     // Linux and Mac don't have reserved memory and doesn't use this function.
@@ -1522,6 +1659,11 @@ memmgrCalcReservedFbSpace_IMPL
         NV_ASSERT(!pMemoryManager->Ram.fbRegion[idxFastRegion].bRsvdRegion);
         NV_ASSERT(!pMemoryManager->Ram.fbRegion[idxSlowRegion].bRsvdRegion);
 
+        //
+        // Whenever Hopper CC is enabled, it is mandatory to put allocations
+        // like page tables, CBC and fault buffers in CPR region. Cannot put
+        // reserved memory in protected region in non CC cases
+        //
         if (!bAllocProtected)
         {
             NV_ASSERT(!pMemoryManager->Ram.fbRegion[idxISORegion].bProtected);
@@ -1670,6 +1812,7 @@ NV_STATUS memmgrFree_IMPL
 
         portMemSet(pFbAllocInfo, 0, sizeof(FB_ALLOC_INFO));
         portMemSet(pFbAllocPageFormat, 0, sizeof(FB_ALLOC_PAGE_FORMAT));
+        pFbAllocInfo->hClient = hClient;
         pFbAllocInfo->pageFormat = pFbAllocPageFormat;
 
         //
@@ -1849,9 +1992,11 @@ memmgrSetPartitionableMem_IMPL
         // enabling "scrub on free" using virtual CE writes, memory gets consumed by
         // page tables backing the scrubber channel virtual mappings and hence the
         // calculation below no longer holds good
+        // In case of HCC, structures like PB, GPFIFO and USERD for scrubber and golden
+        // channels are required to be in CPR vidmem. This changes the calculation below
+        // We can ignore this for the non-MIG case.
         //
-        if (!gpuIsApmFeatureEnabled(pGpu) ||
-            !memmgrUseVasForCeMemoryOps(pMemoryManager) ||
+        if (!gpuIsCCorApmFeatureEnabled(pGpu) ||
             IS_MIG_ENABLED(pGpu))
         {
             //
@@ -1860,18 +2005,18 @@ memmgrSetPartitionableMem_IMPL
             // offset argument is not implemented as of this writing, so we
             // only get the base address of the region that contains it). There
             // is a known allocation from the top-level scrubber channel that
-            // is expected to be no larger than 64K. Issue a warning for any
+            // is expected to be no larger than 128K. Issue a warning for any
             // other uses.
             //
-            if ((size > RM_PAGE_SIZE_64K) &&
-                (freeMem < (size - RM_PAGE_SIZE_64K)))
+            if ((size > RM_PAGE_SIZE_128K) &&
+                (freeMem < (size - RM_PAGE_SIZE_128K)))
             {
                 NV_PRINTF(LEVEL_ERROR,
                     "Assumption that PMA is empty (after accounting for the top-level scrubber) is not met!\n");
                 NV_PRINTF(LEVEL_ERROR,
                     "    free space = 0x%llx bytes, total space = 0x%llx bytes\n",
                     freeMem, size);
-                NV_ASSERT_OR_RETURN(freeMem >= (size - RM_PAGE_SIZE_64K),
+                NV_ASSERT_OR_RETURN(freeMem >= (size - RM_PAGE_SIZE_128K),
                                     NV_ERR_INVALID_STATE);
             }
         }
@@ -1916,7 +2061,10 @@ memmgrSetPartitionableMem_IMPL
     NV_ASSERT_OR_RETURN(!rangeIsEmpty(pMemoryManager->MIGMemoryPartitioningInfo.partitionableMemoryRange),
                         NV_ERR_INVALID_STATE);
 
-    NV_ASSERT_OK_OR_RETURN(memmgrSetMIGPartitionableBAR1Range(pGpu, pMemoryManager));
+    if (!KBUS_CPU_VISIBLE_BAR12_DISABLED(pGpu))
+    {
+        NV_ASSERT_OK_OR_RETURN(memmgrSetMIGPartitionableBAR1Range(pGpu, pMemoryManager));
+    }
 
     if (IS_GSP_CLIENT(pGpu))
     {
@@ -1938,7 +2086,7 @@ memmgrFillComprInfo_IMPL
 (
     OBJGPU        *pGpu,
     MemoryManager *pMemoryManager,
-    NvU32          pageSize,
+    NvU64          pageSize,
     NvU32          pageCount,
     NvU32          kind,
     NvU64          surfOffset,
@@ -1956,12 +2104,13 @@ memmgrFillComprInfo_IMPL
     if (!memmgrIsKind_HAL(pMemoryManager, FB_IS_KIND_COMPRESSIBLE, kind))
         return NV_OK;
 
+    // TODO: We will have to support compression on vGPU HOST for AC
     NV_ASSERT(compTagStartOffset != ~(NvU32)0);
 
     pComprInfo->compPageShift = pMemorySystemConfig->comprPageShift;
     pComprInfo->compTagLineMin = compTagStartOffset;
     pComprInfo->compPageIndexLo = (NvU32)(surfOffset >> pComprInfo->compPageShift);
-    pComprInfo->compPageIndexHi = (NvU32)((surfOffset + (NvU64)pageSize * (NvU64)pageCount - 1) >> pComprInfo->compPageShift);
+    pComprInfo->compPageIndexHi = (NvU32)((surfOffset + pageSize * pageCount - 1) >> pComprInfo->compPageShift);
     pComprInfo->compTagLineMultiplier = 1;
 
     return NV_OK;
@@ -2027,23 +2176,6 @@ memmgrGetKindComprFromMemDesc_IMPL
                                         offset, kind, pComprInfo);
 }
 
-NvBool
-memmgrIsCompressible_IMPL
-(
-    MemoryManager     *pMemoryManager,
-    MEMORY_DESCRIPTOR *pMemDesc
-)
-{
-    COMPR_INFO comprInfo;
-    NvU32 kind;
-
-    NV_CHECK_OR_RETURN(LEVEL_ERROR,
-        memmgrGetKindComprFromMemDesc(pMemoryManager, pMemDesc, 0, &kind, &comprInfo) == NV_OK,
-        NV_FALSE);
-
-    return memmgrIsKind_HAL(pMemoryManager, FB_IS_KIND_COMPRESSIBLE, comprInfo.kind);
-}
-
 void
 memmgrSetMIGPartitionableMemoryRange_IMPL
 (
@@ -2077,11 +2209,17 @@ memmgrSetMIGPartitionableBAR1Range_IMPL
 {
     KernelBus  *pKernelBus = GPU_GET_KERNEL_BUS(pGpu);
     OBJVASPACE *pBar1VAS   = kbusGetBar1VASpace_HAL(pGpu, pKernelBus);
-    OBJEHEAP   *pVASHeap   = vaspaceGetHeap(pBar1VAS);
+    OBJEHEAP   *pVASHeap;
     NvU64 largestFreeOffset = 0;
     NvU64 largestFreeSize = 0;
     NvU64 partitionableBar1Start;
     NvU64 partitionableBar1End;
+
+    if (pGpu->getProperty(pGpu, PDB_PROP_GPU_ZERO_FB))
+        return NV_OK;
+
+    NV_ASSERT_OR_RETURN(pBar1VAS != NULL, NV_ERR_INVALID_STATE);
+    pVASHeap = vaspaceGetHeap(pBar1VAS);
 
     // Get partitionable BAR1 range
     pVASHeap->eheapInfo(pVASHeap, NULL, NULL, &largestFreeOffset, &largestFreeSize, NULL, NULL);
@@ -2145,64 +2283,107 @@ memmgrAllocMIGGPUInstanceMemory_PF
     NV_STATUS rmStatus = NV_OK;
     NvHandle hMemory = 0;
     RM_API *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    NvBool bNumaEnabled = osNumaOnliningEnabled(pGpu->pOsGpuInfo);
 
     NV_ASSERT_OR_RETURN(pKernelMIGManager != NULL, NV_ERR_INVALID_STATE);
     NV_ASSERT_OK_OR_RETURN(kmemsysGetMIGGPUInstanceMemInfo(pGpu, pKernelMemorySystem, swizzId, pAddrRange));
 
     //
     // Only allocate memory for non swizzID-0 GPU instances as swizzID-0 owns full
-    // gpu and there is no need to pre-reserve memory for that
+    // gpu and there is no need to pre-reserve memory for that and non
+    // coherent systems. In coherent NUMA systems, NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE
+    // is not supported and the memory comes from the MIG partition memory
+    // NUMA node.
     //
     if (kmigmgrIsMemoryPartitioningNeeded_HAL(pGpu, pKernelMIGManager, swizzId))
     {
-        //
-        // Allocate memory using vidHeapControl
-        //
-        // vidHeapControl calls should happen outside GPU locks
-        // This is a PMA requirement as memory allocation calls may invoke eviction
-        // which UVM could get stuck behind GPU lock
-        // See Bug 1735851-#24
-        //
-        rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
-
-        // Allocate gpfifo entries
-        NV_MEMORY_ALLOCATION_PARAMS memAllocParams;
-        portMemSet(&memAllocParams, 0, sizeof(NV_MEMORY_ALLOCATION_PARAMS));
-        memAllocParams.owner     = HEAP_OWNER_RM_CLIENT_GENERIC;
-        memAllocParams.type      = NVOS32_TYPE_IMAGE;
-        memAllocParams.size      = rangeLength(*pAddrRange);
-        memAllocParams.attr      = DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM);
-        memAllocParams.attr     |= DRF_DEF(OS32, _ATTR, _PHYSICALITY, _CONTIGUOUS);
-        memAllocParams.attr     |= DRF_DEF(OS32, _ATTR, _PAGE_SIZE, _DEFAULT);
-        memAllocParams.attr2     = DRF_DEF(OS32, _ATTR2, _PAGE_OFFLINING, _OFF); // free the offlined pages
-        memAllocParams.flags    |= NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE;
-        memAllocParams.rangeLo   = 0;
-        memAllocParams.rangeHi   = 0;
-        memAllocParams.offset    = pAddrRange->lo; // Offset needed if fixed address allocation
-        memAllocParams.hVASpace  = 0; // Physical allocation
-        memAllocParams.internalflags = NVOS32_ALLOC_INTERNAL_FLAGS_SKIP_SCRUB;
-
-        rmStatus = pRmApi->Alloc(pRmApi,
-                                 pMemoryManager->MIGMemoryPartitioningInfo.hClient,
-                                 pMemoryManager->MIGMemoryPartitioningInfo.hSubdevice,
-                                 &hMemory,
-                                 NV01_MEMORY_LOCAL_USER,
-                                 &memAllocParams);
-
-        // Reaquire the GPU locks
-        if (rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_MEM) != NV_OK)
+        if(bNumaEnabled)
         {
-            NV_PRINTF(LEVEL_ERROR, "failed to grab RM-Lock\n");
-            DBG_BREAKPOINT();
-            rmStatus = NV_ERR_GENERIC;
-            goto cleanup;
+            NvS32 numaNodeId;
+            NvU64 partitionBaseAddr = pAddrRange->lo;
+            NvU64 partitionSize = rangeLength(*pAddrRange);
+            NvU64 unalignedPartitionBaseAddr = partitionBaseAddr;
+            NvU64 memblockSize = 0;
+
+            NV_ASSERT_OK_OR_RETURN(osNumaMemblockSize(&memblockSize));
+            //
+            // Align the partition base and size to memblock size
+            // Some FB memory is wasted here if it is not already aligned.
+            //
+            partitionBaseAddr = NV_ALIGN_UP64(unalignedPartitionBaseAddr, memblockSize);
+            partitionSize -= (partitionBaseAddr - unalignedPartitionBaseAddr);
+            partitionSize = NV_ALIGN_DOWN64(partitionSize, memblockSize);
+
+            if (kmigmgrGetSwizzIdInUseMask(pGpu, pKernelMIGManager) == 0x0)
+            {
+                // Remove swizz Id 0 / baremetal GPU memory NUMA node
+                pmaNumaOfflined(&GPU_GET_HEAP(pGpu)->pmaObject);
+                kmemsysNumaRemoveMemory_HAL(pGpu, pKernelMemorySystem, 0);
+            }
+
+            //
+            // The memory gets removed in memmgrFreeMIGGPUInstanceMemory if
+            // there is any failure after adding the memory.
+            //
+            NV_ASSERT_OK_OR_RETURN(kmemsysNumaAddMemory_HAL(pGpu,
+                                                            pKernelMemorySystem,
+                                                            swizzId,
+                                                            partitionBaseAddr,
+                                                            partitionSize,
+                                                            &numaNodeId));
         }
-
-        if (rmStatus != NV_OK)
+        else
         {
-            NV_PRINTF(LEVEL_ERROR,
-                      "Unable to allocate physical memory for GPU instance.\n");
-            return rmStatus;
+            //
+            // Allocate memory using vidHeapControl
+            //
+            // vidHeapControl calls should happen outside GPU locks
+            // This is a PMA requirement as memory allocation calls may invoke eviction
+            // which UVM could get stuck behind GPU lock
+            // See Bug 1735851-#24
+            //
+            rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+
+            // Allocate gpfifo entries
+            NV_MEMORY_ALLOCATION_PARAMS memAllocParams;
+            portMemSet(&memAllocParams, 0, sizeof(NV_MEMORY_ALLOCATION_PARAMS));
+            memAllocParams.owner     = HEAP_OWNER_RM_CLIENT_GENERIC;
+            memAllocParams.type      = NVOS32_TYPE_IMAGE;
+            memAllocParams.size      = rangeLength(*pAddrRange);
+            memAllocParams.attr      = DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM);
+            memAllocParams.attr     |= DRF_DEF(OS32, _ATTR, _PHYSICALITY, _CONTIGUOUS);
+            memAllocParams.attr     |= DRF_DEF(OS32, _ATTR, _PAGE_SIZE, _DEFAULT);
+            memAllocParams.attr2     = DRF_DEF(OS32, _ATTR2, _PAGE_OFFLINING, _OFF); // free the offlined pages
+            memAllocParams.flags    |= NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE;
+            memAllocParams.rangeLo   = 0;
+            memAllocParams.rangeHi   = 0;
+            memAllocParams.offset    = pAddrRange->lo; // Offset needed if fixed address allocation
+            memAllocParams.hVASpace  = 0; // Physical allocation
+            memAllocParams.internalflags = NVOS32_ALLOC_INTERNAL_FLAGS_SKIP_SCRUB;
+
+            rmStatus = pRmApi->Alloc(pRmApi,
+                                     pMemoryManager->MIGMemoryPartitioningInfo.hClient,
+                                     pMemoryManager->MIGMemoryPartitioningInfo.hSubdevice,
+                                     &hMemory,
+                                     NV01_MEMORY_LOCAL_USER,
+                                     &memAllocParams,
+                                     sizeof(memAllocParams));
+
+            // Reaquire the GPU locks
+            if (rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_MEM) != NV_OK)
+            {
+                NV_PRINTF(LEVEL_ERROR, "failed to grab RM-Lock\n");
+                DBG_BREAKPOINT();
+                rmStatus = NV_ERR_GENERIC;
+                goto cleanup;
+            }
+
+            if (rmStatus != NV_OK)
+            {
+                NV_PRINTF(LEVEL_ERROR,
+                          "Unable to allocate physical memory for GPU instance.\n");
+                return rmStatus;
+            }
         }
     }
     rmStatus = _memmgrInitMIGMemoryPartitionHeap(pGpu, pMemoryManager, swizzId, pAddrRange, ppMemoryPartitionHeap);
@@ -2239,6 +2420,10 @@ _memmgrInitMIGMemoryPartitionHeap
     NV_STATUS status = NV_OK;
     KernelMIGManager *pKernelMIGManager = GPU_GET_KERNEL_MIG_MANAGER(pGpu);
     Heap *pMemoryPartitionHeap = NULL;
+    NvBool bNumaEnabled = osNumaOnliningEnabled(pGpu->pOsGpuInfo);
+    KernelMemorySystem *pKernelMemorySystem = GPU_GET_KERNEL_MEMORY_SYSTEM(pGpu);
+    NvU64 partitionBaseAddr = pAddrRange->lo;
+    NvU64 partitionSize = rangeLength(*pAddrRange);
 
     // Use default heap for swizzID-0 as we don't prereserve memory for swizzID-0
     NV_ASSERT_OR_RETURN(pKernelMIGManager != NULL, NV_ERR_INVALID_STATE);
@@ -2267,12 +2452,34 @@ _memmgrInitMIGMemoryPartitionHeap
             status,
             memmgrPmaInitialize(pGpu, pMemoryManager, &pMemoryPartitionHeap->pmaObject),
             fail);
+
+        if (bNumaEnabled)
+        {
+            NV_ASSERT_OR_GOTO(pKernelMemorySystem->memPartitionNumaInfo[swizzId].bInUse, fail);
+            partitionBaseAddr = pKernelMemorySystem->memPartitionNumaInfo[swizzId].offset;
+            partitionSize = pKernelMemorySystem->memPartitionNumaInfo[swizzId].size;
+
+            //
+            // The base and size passed here is the FB base and size and
+            // not the partition's. pmaNumaOnlined requires the FB base and
+            // size to convert between FB local address and SPA.
+            // memmgrPmaRegisterRegions is where the partition's base and size
+            // is reported to PMA.
+            //
+            NV_ASSERT_OK_OR_GOTO(
+                status,
+                pmaNumaOnlined(&pMemoryPartitionHeap->pmaObject,
+                               pKernelMemorySystem->memPartitionNumaInfo[swizzId].numaNodeId,
+                               pKernelMemorySystem->coherentCpuFbBase,
+                               pKernelMemorySystem->numaOnlineSize),
+                               fail);
+        }
     }
 
     NV_ASSERT_OK_OR_GOTO(
         status,
-        heapInit(pGpu, pMemoryPartitionHeap, pAddrRange->lo,
-                 rangeLength(*pAddrRange),
+        heapInit(pGpu, pMemoryPartitionHeap, partitionBaseAddr,
+                 partitionSize,
                  HEAP_TYPE_PARTITION_LOCAL,
                  GPU_GFID_PF,
                  NULL),
@@ -2330,9 +2537,10 @@ memmgrFreeMIGGPUInstanceMemory_IMPL
 {
     RM_API *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
     KernelMIGManager *pKernelMIGManager = GPU_GET_KERNEL_MIG_MANAGER(pGpu);
+    KernelMemorySystem *pKernelMemorySystem = GPU_GET_KERNEL_MEMORY_SYSTEM(pGpu);
+    NvBool bNumaEnabled = osNumaOnliningEnabled(pGpu->pOsGpuInfo);
 
     NV_ASSERT_OR_RETURN(pKernelMIGManager != NULL, NV_ERR_INVALID_STATE);
-    NV_CHECK_OR_RETURN(LEVEL_SILENT, hMemory != NV01_NULL_OBJECT, NV_OK);
 
     // Nothing to do for swizzId 0 as we neither allocate memory nor allocate new heap object
     if (!kmigmgrIsMemoryPartitioningNeeded_HAL(pGpu, pKernelMIGManager, swizzId))
@@ -2341,8 +2549,35 @@ memmgrFreeMIGGPUInstanceMemory_IMPL
     objDelete(*ppMemoryPartitionHeap);
     *ppMemoryPartitionHeap = NULL;
 
+    if (bNumaEnabled)
+    {
+        kmemsysNumaRemoveMemory_HAL(pGpu, pKernelMemorySystem, swizzId);
+
+        if (kmigmgrGetSwizzIdInUseMask(pGpu, pKernelMIGManager) == 0x0)
+        {
+            NvS32 numaNodeId;
+
+            // Add back the baremetal GPU memory NUMA node.
+            NV_ASSERT_OK_OR_RETURN(kmemsysNumaAddMemory_HAL(pGpu,
+                                     pKernelMemorySystem,
+                                     0,
+                                     pKernelMemorySystem->numaOnlineBase,
+                                     pKernelMemorySystem->numaOnlineSize,
+                                     &numaNodeId));
+            // Baremetal NUMA node id should be same as pGpu->numaNodeId
+            NV_ASSERT_OR_RETURN(numaNodeId == pGpu->numaNodeId, NV_ERR_INVALID_STATE);
+            NV_ASSERT_OK_OR_RETURN(pmaNumaOnlined(&GPU_GET_HEAP(pGpu)->pmaObject,
+                                                  pGpu->numaNodeId,
+                                                  pKernelMemorySystem->coherentCpuFbBase,
+                                                  pKernelMemorySystem->numaOnlineSize));
+        }
+    }
+
     // Free allocated memory
-    pRmApi->Free(pRmApi, pMemoryManager->MIGMemoryPartitioningInfo.hClient, hMemory);
+    if (!bNumaEnabled && (hMemory != NV01_NULL_OBJECT))
+    {
+        pRmApi->Free(pRmApi, pMemoryManager->MIGMemoryPartitioningInfo.hClient, hMemory);
+    }
     return NV_OK;
 }
 
@@ -2403,6 +2638,15 @@ memmgrPageLevelPoolsCreate_IMPL
 
         NV_ASSERT(NV_OK == status);
 
+        //
+        // Allocate the pool in CPR in case of Confidential Compute
+        // When Hopper Confidential Compute is enabled, page tables
+        // cannot be in non-CPR region
+        //
+        if (gpuIsCCFeatureEnabled(pGpu) && (status == NV_OK))
+        {
+            rmMemPoolAllocateProtectedMemory(pMemoryManager->pPageLevelReserve, NV_TRUE);
+        }
     }
     return status;
 }
@@ -2527,6 +2771,12 @@ memmgrPmaInitialize_IMPL
         pmaInitFlags |= PMA_INIT_NUMA;
     }
 
+    if (gpuIsSelfHosted(pGpu))
+    {
+        NV_PRINTF(LEVEL_INFO, "Initializing PMA with NUMA_AUTO_ONLINE flag.\n");
+        pmaInitFlags |= PMA_INIT_NUMA_AUTO_ONLINE;
+    }
+
     if (memmgrIsPmaAddrTree(pMemoryManager))
     {
         pmaInitFlags |= PMA_INIT_ADDRTREE;
@@ -2541,6 +2791,8 @@ memmgrPmaInitialize_IMPL
 
     if (bNumaEnabled)
     {
+        KernelMemorySystem *pKernelMemorySystem = GPU_GET_KERNEL_MEMORY_SYSTEM(pGpu);
+
         NvU32 numaSkipReclaimVal = NV_REG_STR_RM_NUMA_ALLOC_SKIP_RECLAIM_PERCENTAGE_DEFAULT;
 
         if (osReadRegistryDword(pGpu, NV_REG_STR_RM_NUMA_ALLOC_SKIP_RECLAIM_PERCENTAGE, &numaSkipReclaimVal) == NV_OK)
@@ -2551,6 +2803,15 @@ memmgrPmaInitialize_IMPL
             }
         }
         pmaNumaSetReclaimSkipThreshold(pPma, numaSkipReclaimVal);
+
+        // Full FB memory is added and onlined already
+        if (pKernelMemorySystem->memPartitionNumaInfo[0].bInUse)
+        {
+            NV_ASSERT_OK_OR_RETURN(pmaNumaOnlined(pPma, pGpu->numaNodeId,
+                                                  pKernelMemorySystem->coherentCpuFbBase,
+                                                  pKernelMemorySystem->numaOnlineSize));
+        }
+
     }
 
     return NV_OK;
@@ -2631,6 +2892,8 @@ memmgrPmaRegisterRegions_IMPL
     NvU32 blackListCount;
     NvU64 base, size;
     NV_STATUS status = NV_OK;
+    const MEMORY_SYSTEM_STATIC_CONFIG *pMemsysConfig = 
+               kmemsysGetStaticConfig(pGpu, GPU_GET_KERNEL_MEMORY_SYSTEM(pGpu));
 
     blackListCount = pHeap->blackListAddresses.count;
     base = pHeap->base;
@@ -2757,9 +3020,9 @@ memmgrPmaRegisterRegions_IMPL
 _pmaInitFailed:
     portMemFree(pBlacklistPages);
 
-    if ((status == NV_OK) && (pMemoryManager->fbOverrideStartKb != 0))
+    if ((status == NV_OK) && (pMemsysConfig->fbOverrideStartKb != 0))
     {
-        NvU64 allocSize = NV_ALIGN_UP(((NvU64)pMemoryManager->fbOverrideStartKb << 10), PMA_GRANULARITY);
+        NvU64 allocSize = NV_ALIGN_UP(((NvU64)pMemsysConfig->fbOverrideStartKb << 10), PMA_GRANULARITY);
         NvU32 numPages  = (NvU32)(allocSize >> PMA_PAGE_SHIFT);
         PMA_ALLOCATION_OPTIONS allocOptions = {0};
 
@@ -2778,7 +3041,6 @@ _pmaInitFailed:
             portMemFree(pPages);
         }
     }
-
     if (status != NV_OK)
     {
         if (memmgrIsPmaInitialized(pMemoryManager))
@@ -2861,6 +3123,44 @@ memmgrGetFreeMemoryForAllMIGGPUInstances_IMPL
             pmaGetFreeMemory(&pHeap->pmaObject, &val);
         else
             heapGetFree(pHeap, &val);
+
+        *pBytes += val;
+    }
+    FOR_EACH_VALID_GPU_INSTANCE_END();
+}
+
+/*!
+ * @brief Gets total memory for all valid GPU instances
+ *
+ * @param       pGpu
+ * @param       pMemoryManager
+ * @param[out]  pBytes          pointer to the total memory
+ *
+ */
+void
+memmgrGetTotalMemoryForAllMIGGPUInstances_IMPL
+(
+    OBJGPU *pGpu,
+    MemoryManager *pMemoryManager,
+    NvU64 *pBytes
+)
+{
+    NvU64 val = 0;
+    Heap *pHeap = NULL;
+    KernelMIGManager *pKernelMIGManager = GPU_GET_KERNEL_MIG_MANAGER(pGpu);
+    KERNEL_MIG_GPU_INSTANCE *pKernelMIGGPUInstance;
+
+    *pBytes = 0;
+
+    FOR_EACH_VALID_GPU_INSTANCE(pGpu, pKernelMIGManager, pKernelMIGGPUInstance)
+    {
+        NV_ASSERT(pKernelMIGGPUInstance->pMemoryPartitionHeap != NULL);
+        pHeap = pKernelMIGGPUInstance->pMemoryPartitionHeap;
+
+        if (memmgrIsPmaInitialized(pMemoryManager))
+            pmaGetTotalMemory(&pHeap->pmaObject, &val);
+        else
+            heapGetSize(pHeap, &val);
 
         *pBytes += val;
     }
@@ -3077,4 +3377,134 @@ memmgrGetVgpuHostRmReservedFb_KERNEL
                                            &params,
                                            sizeof(params)));
     return params.hostReservedFb;
+}
+
+/*!
+ * @brief   Memory Manager State post load
+ *
+ * @param[in]       pGpu           GPU pointer
+ * @param[in/out]   pMemoryManager MemoryManager pointer
+ * @param[in]       flags          State transition flags
+ *
+ * @returns On success, returns NV_OK.
+ *          On failure, returns error code.
+ */
+NV_STATUS
+memmgrStatePostLoad_IMPL
+(
+    OBJGPU *pGpu,
+    MemoryManager *pMemoryManager,
+    NvU32 flags
+)
+{
+    if (memmgrIsLocalEgmSupported(pMemoryManager))
+    {
+        NvU64 egmPhysAddr, egmSize;
+        NvS32 egmNodeId;
+        NvU32 data32;
+        KernelBif *pKernelBif = GPU_GET_KERNEL_BIF(pGpu);
+
+        pMemoryManager->localEgmNodeId = -1;
+        if (gpuIsSelfHosted(pGpu) &&
+            pKernelBif->getProperty(pKernelBif, PDB_PROP_KBIF_IS_C2C_LINK_UP) &&    // EGM can be enabled only in C2C path.
+            (osGetEgmInfo(pGpu, &egmPhysAddr, &egmSize, &egmNodeId) == NV_OK) &&
+            (egmSize != 0))
+        {
+            pMemoryManager->localEgmBasePhysAddr = egmPhysAddr;
+            pMemoryManager->localEgmSize = egmSize;
+            pMemoryManager->localEgmNodeId = egmNodeId;
+            //
+            // Using fixed Peer ID 7 for local EGM so that vGPU
+            // migration doesn't fail because of peer id conflict in
+            // the new host system.
+            //
+            pMemoryManager->localEgmPeerId = 7;
+            pMemoryManager->bLocalEgmEnabled = NV_TRUE;
+        }
+
+        //
+        // regkey can override the production flow values.
+        // Note that this could cause an issue with vGPU migration
+        // if one host system uses regkey to override the EGM peer id
+        // and other host system doesn't.
+        //
+        if (osReadRegistryDword(pGpu, NV_REG_STR_RM_ENABLE_LOCAL_EGM_PEER_ID, &data32) == NV_OK)
+        {
+            pMemoryManager->bLocalEgmEnabled = NV_TRUE;
+            pMemoryManager->localEgmPeerId = data32;
+        }
+    }
+
+    //
+    // Reserve the peerID used for local EGM so that the peerID isn't
+    // resused for other peer Gpus.
+    //
+    if (memmgrIsLocalEgmEnabled(pMemoryManager))
+    {
+        if (kbusReserveP2PPeerIds_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu), NVBIT(pMemoryManager->localEgmPeerId)) == NV_OK)
+        {
+            {
+                NV2080_CTRL_INTERNAL_HSHUB_EGM_CONFIG_PARAMS params = { 0 };
+                RM_API *pRmApi = GPU_GET_PHYSICAL_RMAPI(pGpu);
+                NV_STATUS status;
+
+                params.egmPeerId = pMemoryManager->localEgmPeerId;
+
+                // Call physical HSHUB to program the EGM PeerId settings.
+
+                status = pRmApi->Control(pRmApi,
+                                         pGpu->hInternalClient,
+                                         pGpu->hInternalSubdevice,
+                                         NV2080_CTRL_CMD_INTERNAL_HSHUB_EGM_CONFIG,
+                                         &params,
+                                         sizeof(params));
+                if (status != NV_OK)
+                {
+                    NV_PRINTF(LEVEL_ERROR, "HSHUB programming failed for EGM Peer ID: %u\n",
+                              pMemoryManager->localEgmPeerId);
+                    pMemoryManager->bLocalEgmEnabled = NV_FALSE;
+                    pMemoryManager->localEgmPeerId = BUS_INVALID_PEER;
+                    return status;
+                }
+            }
+        }
+        else
+        {
+            NV_PRINTF(LEVEL_ERROR,
+                      "Peer ID specified for local EGM already in use!\n");
+            pMemoryManager->bLocalEgmEnabled = NV_FALSE;
+            pMemoryManager->localEgmPeerId = BUS_INVALID_PEER;
+            return NV_ERR_INVALID_ARGUMENT;
+        }
+    }
+    else
+    {
+        pMemoryManager->localEgmPeerId = BUS_INVALID_PEER;
+    }
+    return NV_OK;
+}
+
+NV_STATUS
+memmgrInitCeUtils_IMPL
+(
+    MemoryManager *pMemoryManager,
+    NvBool         bFifoLite
+)
+{
+    NV0050_ALLOCATION_PARAMETERS ceUtilsParams = {0};
+
+    NV_ASSERT_OR_RETURN(pMemoryManager->pCeUtils == NULL, NV_ERR_INVALID_STATE);
+
+    ceUtilsParams.flags = bFifoLite ? DRF_DEF(0050_CEUTILS, _FLAGS, _FIFO_LITE, _TRUE) : 0;
+    return objCreate(&pMemoryManager->pCeUtils, pMemoryManager, CeUtils, ENG_GET_GPU(pMemoryManager), NULL, &ceUtilsParams);
+}
+
+void
+memmgrDestroyCeUtils_IMPL
+(
+    MemoryManager *pMemoryManager
+)
+{
+    objDelete(pMemoryManager->pCeUtils);
+    pMemoryManager->pCeUtils = NULL;
 }

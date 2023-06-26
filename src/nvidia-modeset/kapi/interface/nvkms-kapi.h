@@ -165,8 +165,6 @@ struct NvKmsKapiConnectorInfo {
 
     NvU32 physicalIndex;
 
-    NvU32 headMask;
-
     NvKmsConnectorSignalFormat signalFormat;
     NvKmsConnectorType         type;
 
@@ -194,6 +192,7 @@ struct NvKmsKapiStaticDisplayInfo {
     NvU32  numPossibleClones;
     NvKmsKapiDisplay possibleCloneHandles[NVKMS_KAPI_MAX_CLONE_DISPLAYS];
 
+    NvU32 headMask;
 };
 
 struct NvKmsKapiSyncpt {
@@ -520,14 +519,23 @@ struct NvKmsKapiFunctionsTable {
     );
 
     /*!
-     * Revoke modeset permissions previously granted. This currently applies for all
-     * previous grant requests for this device.
+     * Revoke permissions previously granted. Only one (dispIndex, head,
+     * display) is currently supported.
      *
-     * \param [in]  device                  A device returned by allocateDevice().
+     * \param [in]  device     A device returned by allocateDevice().
+     *
+     * \param [in]  head       head of display.
+     *
+     * \param [in]  display    The display to revoke.
      *
      * \return NV_TRUE on success, NV_FALSE on failure.
      */
-    NvBool (*revokePermissions)(struct NvKmsKapiDevice *device);
+    NvBool (*revokePermissions)
+    (
+        struct NvKmsKapiDevice *device,
+        NvU32 head,
+        NvKmsKapiDisplay display
+    );
 
     /*!
      * Registers for notification, via
@@ -1063,6 +1071,21 @@ struct NvKmsKapiFunctionsTable {
     void (*freeMemoryPages)
     (
         NvU64 *pPages
+    );
+
+     /*!
+     * Check if this memory object can be scanned out for display.
+     *
+     * \param [in]  device  A device allocated using allocateDevice().
+     *
+     * \param [in]  memory  The memory object to check for display support.
+     *
+     * \return NV_TRUE if this memory can be displayed, NV_FALSE if not.
+     */
+    NvBool (*isMemoryValidForDisplay)
+    (
+        const struct NvKmsKapiDevice *device,
+        const struct NvKmsKapiMemory *memory
     );
 
     /*

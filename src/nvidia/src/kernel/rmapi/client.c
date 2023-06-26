@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -39,13 +39,16 @@
 #include "gpu/bus/third_party_p2p.h"
 #include "virtualization/hypervisor/hypervisor.h"
 
+OsInfoMap g_osInfoList;
 UserInfoList g_userInfoList;
 RmClientList g_clientListBehindGpusLock; // RS-TODO remove this WAR
 
 #define RS_FW_UNIQUE_HANDLE_BASE  (0xc9f00000)
 
-NV_STATUS _registerUserInfo(PUID_TOKEN *ppUidToken, UserInfo **ppUserInfo);
-NV_STATUS _unregisterUserInfo(UserInfo *pUserInfo);
+static NV_STATUS _registerUserInfo(PUID_TOKEN *ppUidToken, UserInfo **ppUserInfo);
+static NV_STATUS _unregisterUserInfo(UserInfo *pUserInfo);
+static NV_STATUS _registerOSInfo(RmClient *pClient, void *pOSInfo);
+static NV_STATUS _unregisterOSInfo(RmClient *pClient, void *pOSInfo);
 
 NV_STATUS
 rmclientConstruct_IMPL
@@ -150,6 +153,8 @@ rmclientConstruct_IMPL
         bReleaseLock = NV_TRUE;
     }
 
+    _registerOSInfo(pClient, pClient->pOSInfo);
+
     pClient->bIsClientVirtualMode = (pSecInfo->pProcessToken != NULL);
 
     //
@@ -164,7 +169,7 @@ rmclientConstruct_IMPL
         PUID_TOKEN pUidToken = osGetCurrentUidToken();
         UserInfo *pUserInfo = NULL;
 
-        if (RMCFG_FEATURE_PLATFORM_GSP && IS_VGPU_GSP_PLUGIN_OFFLOAD_ENABLED(pGpu))
+        if (RMCFG_FEATURE_PLATFORM_GSP)
         {
             pClient->pSecurityToken = pSecurityToken;
         }
@@ -261,6 +266,8 @@ rmclientDestruct_IMPL
             bReleaseLock = NV_TRUE;
         }
     }
+
+    _unregisterOSInfo(pClient, pClient->pOSInfo);
 
     listRemoveFirstByValue(&g_clientListBehindGpusLock, (void*)&pClient);
 
@@ -547,27 +554,21 @@ rmclientPostProcessPendingFreeList_IMPL
     return NV_OK;
 }
 
-static RmClient *handleToObject(NvHandle hClient)
-{
-    RmClient *pClient;
-    return (NV_OK == serverutilGetClientUnderLock(hClient, &pClient)) ? pClient : NULL;
-}
-
 RS_PRIV_LEVEL rmclientGetCachedPrivilegeByHandle(NvHandle hClient)
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     return pClient ? rmclientGetCachedPrivilege(pClient) : RS_PRIV_LEVEL_USER;
 }
 
 NvBool rmclientIsAdminByHandle(NvHandle hClient, RS_PRIV_LEVEL privLevel)
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     return pClient ? rmclientIsAdmin(pClient, privLevel) : NV_FALSE;
 }
 
 NvBool rmclientSetClientFlagsByHandle(NvHandle hClient, NvU32 clientFlags)
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     if (pClient)
         rmclientSetClientFlags(pClient, clientFlags);
     return !!pClient;
@@ -575,20 +576,20 @@ NvBool rmclientSetClientFlagsByHandle(NvHandle hClient, NvU32 clientFlags)
 
 void rmclientPromoteDebuggerStateByHandle(NvHandle hClient, NvU32 newMinimumState)
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     if (pClient)
         _rmclientPromoteDebuggerState(pClient, newMinimumState);
 }
 
 void *rmclientGetSecurityTokenByHandle(NvHandle hClient)
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     return pClient ? rmclientGetSecurityToken(pClient) : NULL;
 }
 
 NV_STATUS rmclientUserClientSecurityCheckByHandle(NvHandle hClient, const API_SECURITY_INFO *pSecInfo)
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
 
     //
     // Return early if it's a null object. This is probably the allocation of
@@ -622,7 +623,7 @@ NV_STATUS rmclientUserClientSecurityCheckByHandle(NvHandle hClient, const API_SE
  * @param[inout] ppUidToken
  * @param[out] ppUserInfo
  */
-NV_STATUS
+static NV_STATUS
 _registerUserInfo
 (
     PUID_TOKEN *ppUidToken,
@@ -687,7 +688,7 @@ _registerUserInfo
  *
  * @param[in] pUserInfo
  */
-NV_STATUS
+static NV_STATUS
 _unregisterUserInfo
 (
     UserInfo *pUserInfo
@@ -850,7 +851,7 @@ NvBool rmclientIsCapableOrAdminByHandle
     RS_PRIV_LEVEL privLevel
 )
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     if (pClient == NULL)
     {
         return NV_FALSE;
@@ -881,11 +882,87 @@ NvBool rmclientIsCapableByHandle
     NvU32 capability
 )
 {
-    RmClient *pClient = handleToObject(hClient);
+    RmClient *pClient = serverutilGetClientUnderLock(hClient);
     if (pClient == NULL)
     {
         return NV_FALSE;
     }
 
     return rmclientIsCapable(pClient, capability);
+}
+
+/**
+ *
+ * Register a client with a user info list
+ *
+ * This function must be protected by a lock (currently the GPUs lock.)
+ *
+ * @param[in] pClient
+ * @param[in] pOSInfo
+ */
+static NV_STATUS
+_registerOSInfo
+(
+   RmClient *pClient,
+   void *pOSInfo
+)
+{
+    OsInfoMapSubmap *pSubmap = NULL;
+    RmClient **pInsert = NULL;
+    NvU64 key1 = (NvUPtr)pOSInfo;
+    NvU64 key2 = (NvU64)(staticCast(pClient,RsClient))->hClient;
+
+    if (multimapFindItem(&g_osInfoList, key1, key2) != NULL)
+        return NV_ERR_INSERT_DUPLICATE_NAME;
+
+    if (multimapFindSubmap(&g_osInfoList, key1) == NULL)
+    {
+        pSubmap = multimapInsertSubmap(&g_osInfoList, key1);
+        if (pSubmap == NULL)
+            return NV_ERR_NO_MEMORY;
+    }
+
+    pInsert = multimapInsertItemNew(&g_osInfoList, key1, key2);
+    if (pInsert == NULL)
+        return NV_ERR_NO_MEMORY;
+
+    osAllocatedRmClient(pOSInfo);
+
+    *pInsert = pClient;
+
+    return NV_OK;
+}
+
+/**
+ *
+ * Unregister a client from a user info list
+ *
+ * This function must be protected by a lock (currently the GPUs lock.)
+ *
+ * @param[in] pClient
+ * @param[in] pOSInfo
+ */
+static NV_STATUS
+_unregisterOSInfo
+(
+    RmClient *pClient,
+    void *pOSInfo
+)
+{
+     NvU64 key1 = (NvUPtr)pOSInfo;
+     NvU64 key2 = (NvU64)(staticCast(pClient, RsClient))->hClient;
+     OsInfoMapSubmap *pSubmap = NULL;
+     RmClient **pFind = NULL;
+
+     pFind = multimapFindItem(&g_osInfoList, key1, key2);
+     if (pFind != NULL)
+         multimapRemoveItem(&g_osInfoList, pFind);
+
+     pSubmap = multimapFindSubmap(&g_osInfoList, key1);
+     if (pSubmap == NULL || multimapCountSubmapItems(&g_osInfoList, pSubmap) > 0)
+         return NV_OK;
+
+     multimapRemoveSubmap(&g_osInfoList, pSubmap);
+
+     return NV_OK;
 }

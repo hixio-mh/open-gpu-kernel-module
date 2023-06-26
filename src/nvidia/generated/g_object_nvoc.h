@@ -79,6 +79,7 @@ struct Object {
     struct Object *pParent;
     struct NVOC_CHILD_TREE childTree;
     NvU32 ipVersion;
+    NvU32 createFlags;
 };
 
 #ifndef __NVOC_CLASS_Object_TYPEDEF__
@@ -165,10 +166,10 @@ static inline struct Object *objGetDirectParent(struct Object *pObj) {
 #undef PRIVATE_FIELD
 
 
-// 
-// IP versioning definitions are temporary until NVOC halspec support is 
-// finished. 
-//  
+//
+// IP versioning definitions are temporary until NVOC halspec support is
+// finished.
+//
 // IP_VERSION format as defined by the hardware engines.
 // A _MAJOR value of 0 means the object has no version number.
 //
@@ -179,8 +180,6 @@ static inline struct Object *objGetDirectParent(struct Object *pObj) {
 #define NV_ODB_IP_VER_MAJOR                                   31:24 /* R-IVF */
 
 #define IPVersion(pObj)                            staticCast((pObj), Object)->ipVersion
-#define IsIPVersionValid(pObj)                     (DRF_VAL(_ODB, _IP_VER, _MAJOR, IPVersion(pObj)) != 0)
-#define IsIPVersionOrLater(pObj, v0)               (IPVersion(pObj) >= (v0))
 //  v0 .. v1  inclusive
 #define IsIPVersionInRange(pObj, v0, v1)           ((IPVersion(pObj) >= (v0)) && (IPVersion(pObj) <= (v1)))
 

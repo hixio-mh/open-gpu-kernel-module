@@ -195,8 +195,6 @@ deviceDestruct_IMPL
     NV_STATUS               rmStatus = NV_OK;
     NV_STATUS               tmpStatus;
     NvHandle                hClient;
-    NODE                   *pNode;
-    RM_API                 *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
 
     resGetFreeParams(staticCast(pDevice, RsResource), &pCallContext, &pParams);
 
@@ -205,18 +203,6 @@ deviceDestruct_IMPL
     NV_PRINTF(LEVEL_INFO, "    type: device\n");
 
     LOCK_METER_DATA(FREE_DEVICE, 0, 0, 0);
-
-    // Free all device memory
-    btreeEnumStart(0, &pNode, pDevice->DevMemoryTable);
-    while (pNode != NULL)
-    {
-        Memory *pMemory = pNode->Data;
-        btreeEnumNext(&pNode, pDevice->DevMemoryTable);
-
-        tmpStatus = pRmApi->Free(pRmApi, hClient, RES_GET_HANDLE(pMemory));
-        if ((tmpStatus != NV_OK) && (rmStatus == NV_OK))
-            rmStatus = tmpStatus;
-    }
 
     // free the device
     if (_deviceTeardownRef(pDevice, pCallContext) != NV_OK ||
@@ -529,29 +515,6 @@ deviceGetByGpu_IMPL
 // ****************************************************************************
 //                            Deprecated Functions
 // ****************************************************************************
-
-/**
- * WARNING: This function is deprecated! Please use deviceGetByHandle.
- */
-Device *
-CliGetDeviceInfo
-(
-    NvHandle hClient,
-    NvHandle hDevice
-)
-{
-    RsClient   *pClient;
-    NV_STATUS   status;
-    Device     *pDevice;
-
-    status = serverGetClientUnderLock(&g_resServ, hClient, &pClient);
-    if (status != NV_OK)
-        return NULL;
-
-    status = deviceGetByHandle(pClient, hDevice, &pDevice);
-
-    return (status == NV_OK) ? pDevice : NULL;
-}
 
 /**
  * WARNING: This function is deprecated and use is *strongly* discouraged

@@ -174,7 +174,7 @@ subdeviceCtrlCmdFlaRange_IMPL
 )
 {
     NV_STATUS status = NV_OK;
-    POBJGPU   pGpu = GPU_RES_GET_GPU(pSubdevice);
+    OBJGPU   *pGpu = GPU_RES_GET_GPU(pSubdevice);
     KernelBus *pKernelBus = GPU_GET_KERNEL_BUS(pGpu);
     KernelMIGManager *pKernelMIGManager;
     NvHandle hClient = RES_GET_CLIENT_HANDLE(pSubdevice);
@@ -293,3 +293,4 @@ subdeviceCtrlCmdFlaGetFabricMemStats_IMPL
 
     return fabricvaspaceGetFreeHeap(pFabricVAS, &pParams->freeSize);
 }
+

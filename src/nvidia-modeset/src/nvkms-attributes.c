@@ -31,6 +31,7 @@
 #include "nvkms-rmapi.h"
 #include "nvos.h"
 #include "nvkms-stereo.h"
+#include "nvkms-hdmi.h"
 
 #include <ctrl/ctrl0073/ctrl0073dp.h> // NV0073_CTRL_CMD_DP_GET_LINK_CONFIG_*
 
@@ -196,6 +197,14 @@ static NvBool GetHead(const NVDpyEvoRec *pDpyEvo, NvS64 *pHead)
     return TRUE;
 }
 
+static NvBool GetHwHead(const NVDpyEvoRec *pDpyEvo, NvS64 *pHead)
+{
+    NvU32 primaryHwHead =
+        nvGetPrimaryHwHead(pDpyEvo->pDispEvo, pDpyEvo->apiHead);
+    *pHead = (NvS64)primaryHwHead;
+    return TRUE;
+}
+
 static NvBool DitherConfigurationAllowed(const NVDpyEvoRec *pDpyEvo)
 {
     NVDispEvoPtr pDispEvo = pDpyEvo->pDispEvo;
@@ -210,7 +219,6 @@ static void SetDitheringCommon(NVDpyEvoPtr pDpyEvo)
     const NVConnectorEvoRec *pConnectorEvo = pDpyEvo->pConnectorEvo;
     NVDispEvoRec *pDispEvo = pConnectorEvo->pDispEvo;
     NVDispApiHeadStateEvoRec *pApiHeadState;
-    enum nvKmsPixelDepth pixelDepth;
     NvU32 head;
 
     if (pDpyEvo->apiHead == NV_INVALID_HEAD) {
@@ -221,16 +229,8 @@ static void SetDitheringCommon(NVDpyEvoPtr pDpyEvo)
     nvAssert((pApiHeadState->hwHeadsMask) != 0x0 &&
              (nvDpyIdIsInDpyIdList(pDpyEvo->id, pApiHeadState->activeDpys)));
 
-    head = nvGetPrimaryHwHead(pDispEvo, pDpyEvo->apiHead);
-    pixelDepth = pDispEvo->headState[head].timings.pixelDepth;
-#if defined(DEBUG)
-    FOR_EACH_EVO_HW_HEAD_IN_MASK(pApiHeadState->hwHeadsMask, head) {
-        nvAssert(pixelDepth == pDispEvo->headState[head].timings.pixelDepth);
-    }
-#endif
-
     nvChooseDitheringEvo(pConnectorEvo,
-                         pixelDepth,
+                         pApiHeadState->attributes.colorBpc,
                          &pDpyEvo->requestedDithering,
                          &pApiHeadState->attributes.dithering);
 
@@ -613,10 +613,12 @@ static NvBool ColorSpaceAndRangeAvailable(const NVDpyEvoRec *pDpyEvo)
  */
 static void DpyPostColorSpaceOrRangeSetEvo(NVDpyEvoPtr pDpyEvo)
 {
+    enum NvKmsDpyAttributeCurrentColorSpaceValue colorSpace;
+    enum NvKmsDpyAttributeColorBpcValue colorBpc;
+    enum NvKmsDpyAttributeColorRangeValue colorRange;
     NVEvoUpdateState updateState = { };
     NVDispEvoRec *pDispEvo = pDpyEvo->pDispEvo;
     NVDispApiHeadStateEvoRec *pApiHeadState;
-    enum nvKmsPixelDepth pixelDepth;
     enum NvYuv420Mode yuv420Mode;
     enum NvKmsOutputTf tf;
     NvU32 head;
@@ -630,13 +632,12 @@ static void DpyPostColorSpaceOrRangeSetEvo(NVDpyEvoPtr pDpyEvo)
              (nvDpyIdIsInDpyIdList(pDpyEvo->id, pApiHeadState->activeDpys)));
 
     head = nvGetPrimaryHwHead(pDispEvo, pDpyEvo->apiHead);
-    pixelDepth = pDispEvo->headState[head].timings.pixelDepth;
     yuv420Mode = pDispEvo->headState[head].timings.yuv420Mode;
     tf = pDispEvo->headState[head].tf;
 #if defined(DEBUG)
     FOR_EACH_EVO_HW_HEAD_IN_MASK(pApiHeadState->hwHeadsMask, head) {
-        nvAssert(pixelDepth == pDispEvo->headState[head].timings.pixelDepth);
         nvAssert(yuv420Mode == pDispEvo->headState[head].timings.yuv420Mode);
+        nvAssert(tf == pDispEvo->headState[head].tf);
     }
 #endif
 
@@ -644,21 +645,45 @@ static void DpyPostColorSpaceOrRangeSetEvo(NVDpyEvoPtr pDpyEvo)
      * Choose current colorSpace and colorRange based on the current mode
      * timings and the requested color space and range.
      */
-    nvChooseCurrentColorSpaceAndRangeEvo(pixelDepth,
-                                         yuv420Mode,
-                                         tf,
-                                         pDpyEvo->requestedColorSpace,
-                                         pDpyEvo->requestedColorRange,
-                                         &pApiHeadState->attributes.colorSpace,
-                                         &pApiHeadState->attributes.colorRange);
+    if (!nvChooseCurrentColorSpaceAndRangeEvo(pDpyEvo,
+                                              yuv420Mode,
+                                              tf,
+                                              pDpyEvo->requestedColorSpace,
+                                              pDpyEvo->requestedColorRange,
+                                              &colorSpace,
+                                              &colorBpc,
+                                              &colorRange)) {
+        nvAssert(!"Failed to choose current color space and color range");
+        return;
+    }
+
+    /* For DP, neither color space nor bpc can be changed without a modeset */
+    if (nvConnectorUsesDPLib(pDpyEvo->pConnectorEvo) &&
+            ((pApiHeadState->attributes.colorSpace != colorSpace) ||
+             (pApiHeadState->attributes.colorBpc != colorBpc))) {
+        return;
+    }
+
+    pApiHeadState->attributes.colorSpace = colorSpace;
+    pApiHeadState->attributes.colorRange = colorRange;
+    pApiHeadState->attributes.colorBpc = colorBpc;
 
     /* Update hardware's current colorSpace and colorRange */
     FOR_EACH_EVO_HW_HEAD_IN_MASK(pApiHeadState->hwHeadsMask, head) {
+        enum nvKmsPixelDepth newPixelDepth =
+            nvEvoColorSpaceBpcToPixelDepth(pApiHeadState->attributes.colorSpace,
+                                           pApiHeadState->attributes.colorBpc);
+
         nvUpdateCurrentHardwareColorSpaceAndRangeEvo(pDispEvo,
                                                      head,
                                                      pApiHeadState->attributes.colorSpace,
                                                      pApiHeadState->attributes.colorRange,
                                                      &updateState);
+
+        if (newPixelDepth != pDispEvo->headState[head].pixelDepth) {
+            pDispEvo->headState[head].pixelDepth = newPixelDepth;
+            nvEvoHeadSetControlOR(pDispEvo, head, &updateState);
+        }
     }
 
     /* Update InfoFrames as needed. */
@@ -672,15 +697,18 @@ static void DpyPostColorSpaceOrRangeSetEvo(NVDpyEvoPtr pDpyEvo)
 
 static NvU32 DpyGetValidColorSpaces(const NVDpyEvoRec *pDpyEvo)
 {
+    const NVDevEvoRec *pDevEvo = pDpyEvo->pDispEvo->pDevEvo;
     NvU32 val = (1 << NV_KMS_DPY_ATTRIBUTE_REQUESTED_COLOR_SPACE_RGB);
 
-    if (pDpyEvo->pConnectorEvo->colorSpaceCaps.ycbcr422Capable &&
-        pDpyEvo->colorSpaceCaps.ycbcr422Capable) {
+    if ((nvDpyIsHdmiEvo(pDpyEvo) &&
+            (pDevEvo->caps.hdmiYCbCr422MaxBpc != 0)) ||
+        (nvConnectorUsesDPLib(pDpyEvo->pConnectorEvo) &&
+            (pDevEvo->caps.dpYCbCr422MaxBpc != 0))) {
         val |= (1 << NV_KMS_DPY_ATTRIBUTE_REQUESTED_COLOR_SPACE_YCbCr422);
     }
 
-    if (pDpyEvo->pConnectorEvo->colorSpaceCaps.ycbcr444Capable &&
-        pDpyEvo->colorSpaceCaps.ycbcr444Capable) {
+    if (nvDpyIsHdmiEvo(pDpyEvo) ||
+            nvConnectorUsesDPLib(pDpyEvo->pConnectorEvo)) {
         val |= (1 << NV_KMS_DPY_ATTRIBUTE_REQUESTED_COLOR_SPACE_YCbCr444);
     }
 
@@ -1057,16 +1085,85 @@ static NvBool GetStereoEvo(const NVDpyEvoRec *pDpyEvo, NvS64 *pValue)
 
 static NvBool GetVrrMinRefreshRate(const NVDpyEvoRec *pDpyEvo, NvS64 *pValue)
 {
-    return FALSE;
+    NvU32 timeoutMicroseconds;
+    const NVDispEvoRec *pDispEvo = pDpyEvo->pDispEvo;
+    NvU32 head;
+
+    if (pDpyEvo->apiHead == NV_INVALID_HEAD) {
+        return FALSE;
+    }
+
+    head = nvGetPrimaryHwHead(pDispEvo, pDpyEvo->apiHead);
+    nvAssert(head != NV_INVALID_HEAD);
+    timeoutMicroseconds =
+        pDispEvo->headState[head].timings.vrr.timeoutMicroseconds;
+#if defined(DEBUG)
+    {
+        NvU32 h;
+        FOR_EACH_EVO_HW_HEAD(pDispEvo, pDpyEvo->apiHead, h) {
+            nvAssert(timeoutMicroseconds ==
+                         pDispEvo->headState[h].timings.vrr.timeoutMicroseconds);
+        }
+    }
+#endif
+
+    *pValue = timeoutMicroseconds ? (1000000 / timeoutMicroseconds) : 0;
+
+    return TRUE;
 }
 
 static NvBool GetVrrMinRefreshRateValidValues(
     const NVDpyEvoRec *pDpyEvo,
     struct NvKmsAttributeValidValuesCommonReply *pValidValues)
 {
-    return FALSE;
+    NvU32 minMinRefreshRate, maxMinRefreshRate;
+    const NVDispEvoRec *pDispEvo = pDpyEvo->pDispEvo;
+    NvU32 head;
+
+    if (pDpyEvo->apiHead == NV_INVALID_HEAD) {
+        return FALSE;
+    }
+
+    head = nvGetPrimaryHwHead(pDispEvo, pDpyEvo->apiHead);
+    nvAssert(head != NV_INVALID_HEAD);
+    nvGetDpyMinRefreshRateValidValues(&pDispEvo->headState[head].timings,
+                                      pDpyEvo->vrr.type,
+                                      pDpyEvo->vrr.edidTimeoutMicroseconds,
+                                      &minMinRefreshRate,
+                                      &maxMinRefreshRate);
+#if defined(DEBUG)
+    {
+        NvU32 h;
+        FOR_EACH_EVO_HW_HEAD(pDispEvo, pDpyEvo->apiHead, h) {
+            NvU32 tmpMinMinRefreshRate, tmpMaxMinRefreshRate;
+
+            nvGetDpyMinRefreshRateValidValues(&pDispEvo->headState[h].timings,
+                                              pDpyEvo->vrr.type,
+                                              pDpyEvo->vrr.edidTimeoutMicroseconds,
+                                              &tmpMinMinRefreshRate,
+                                              &tmpMaxMinRefreshRate);
+
+            nvAssert(tmpMinMinRefreshRate == minMinRefreshRate);
+            nvAssert(tmpMaxMinRefreshRate == maxMinRefreshRate);
+        }
+    }
+#endif
+
+    nvAssert(pValidValues->type == NV_KMS_ATTRIBUTE_TYPE_RANGE);
+
+    pValidValues->u.range.min = minMinRefreshRate;
+    pValidValues->u.range.max = maxMinRefreshRate;
+
+    return TRUE;
 }
 
+static NvBool GetNumberOfHardwareHeadsUsed(
+    const NVDpyEvoRec *pDpyEvo,
+    NvS64 *pNumHwHeadsUsed)
+{
+    *pNumHwHeadsUsed = pDpyEvo->currentAttributes.numberOfHardwareHeadsUsed;
+    return TRUE;
+}
 static const struct {
     NvBool (*set)(NVDpyEvoPtr pDpyEvo, NvS64 value);
     NvBool (*get)(const NVDpyEvoRec *pDpyEvo, NvS64 *pValue);
@@ -1090,6 +1187,12 @@ static const struct {
     [NV_KMS_DPY_ATTRIBUTE_HEAD] = {
         .set            = NULL,
         .get            = GetHead,
+        .getValidValues = NULL,
+        .type           = NV_KMS_ATTRIBUTE_TYPE_INTEGER,
+    },
+    [NV_KMS_DPY_ATTRIBUTE_HW_HEAD] = {
+        .set            = NULL,
+        .get            = GetHwHead,
         .getValidValues = NULL,
         .type           = NV_KMS_ATTRIBUTE_TYPE_INTEGER,
     },
@@ -1248,6 +1351,12 @@ static const struct {
         .get            = GetVrrMinRefreshRate,
         .getValidValues = GetVrrMinRefreshRateValidValues,
         .type           = NV_KMS_ATTRIBUTE_TYPE_RANGE,
+    },
+    [NV_KMS_DPY_ATTRIBUTE_NUMBER_OF_HARDWARE_HEADS_USED] = {
+        .set            = NULL,
+        .get            = GetNumberOfHardwareHeadsUsed,
+        .getValidValues = NULL,
+        .type           = NV_KMS_ATTRIBUTE_TYPE_INTEGER,
     },
 };
 

@@ -139,9 +139,14 @@ struct semaphore nv_linux_devices_lock;
 
 static NvTristate nv_chipset_is_io_coherent = NV_TRISTATE_INDETERMINATE;
 
+NvU64 nv_shared_gpa_boundary = 0;
+
 // True if all the successfully probed devices support ATS
 // Assigned at device probe (module init) time
 NvBool nv_ats_supported = NVCPU_IS_PPC64LE
+#if defined(NV_PCI_DEV_HAS_ATS_ENABLED)
+                          || NV_TRUE
+#endif
 ;
 
 // allow an easy way to convert all debug printfs related to events
@@ -165,7 +170,7 @@ NvBool nv_ats_supported = NVCPU_IS_PPC64LE
 /* nvos_ functions.. do not take a state device parameter  */
 static int      nvos_count_devices(void);
 
-static nv_alloc_t  *nvos_create_alloc(struct device *, int);
+static nv_alloc_t  *nvos_create_alloc(struct device *, NvU64);
 static int          nvos_free_alloc(nv_alloc_t *);
 
 /***
@@ -232,6 +237,22 @@ struct dev_pm_ops nv_pm_ops = {
 #if defined(NVCPU_X86_64)
 #define NV_AMD_SEV_BIT BIT(1)
 
+#define NV_GENMASK_ULL(h, l) \
+    (((~0ULL) << (l)) & (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
+
+static
+void get_shared_gpa_boundary(
+    void
+)
+{
+    NvU32 priv_high = cpuid_ebx(0x40000003);
+    if (priv_high & BIT(22))
+    {
+        NvU32 isolation_config_b = cpuid_ebx(0x4000000C);
+        nv_shared_gpa_boundary = ((NvU64)1) << ((isolation_config_b & NV_GENMASK_ULL(11, 6)) >> 6);
+    }
+}
+
 static
 NvBool nv_is_sev_supported(
     void
@@ -245,6 +266,11 @@ NvBool nv_is_sev_supported(
     native_cpuid(&eax, &ebx, &ecx, &edx);
     if (eax < 0x8000001f)
         return NV_FALSE;
+
+    /* By design, a VM using vTOM doesn't see the SEV setting */
+    get_shared_gpa_boundary();
+    if (nv_shared_gpa_boundary != 0)
+        return NV_TRUE;
 
     eax = 0x8000001f;
     ecx = 0;
@@ -274,17 +300,23 @@ void nv_sev_init(
 #if defined(MSR_AMD64_SEV_ENABLED)
     os_sev_enabled = (os_sev_status & MSR_AMD64_SEV_ENABLED);
 #endif
+
+    /* By design, a VM using vTOM doesn't see the SEV setting */
+    if (nv_shared_gpa_boundary != 0)
+        os_sev_enabled = NV_TRUE;
+
 #endif
 }
 
 static
 nv_alloc_t *nvos_create_alloc(
     struct device *dev,
-    int num_pages
+    NvU64          num_pages
 )
 {
-    nv_alloc_t *at;
-    unsigned int pt_size, i;
+    nv_alloc_t  *at;
+    NvU64        pt_size;
+    unsigned int i;
 
     NV_KZALLOC(at, sizeof(nv_alloc_t));
     if (at == NULL)
@@ -295,6 +327,24 @@ nv_alloc_t *nvos_create_alloc(
 
     at->dev = dev;
     pt_size = num_pages *  sizeof(nvidia_pte_t *);
+    //
+    // Check for multiplication overflow and check whether num_pages value can fit in at->num_pages.
+    //
+    if ((num_pages != 0) && ((pt_size / num_pages) != sizeof(nvidia_pte_t*)))
+    {
+        nv_printf(NV_DBG_ERRORS, "NVRM: Invalid page table allocation - Number of pages exceeds max value.\n");
+        NV_KFREE(at, sizeof(nv_alloc_t));
+        return NULL;
+    }
+
+    at->num_pages = num_pages;
+    if (at->num_pages != num_pages)
+    {
+        nv_printf(NV_DBG_ERRORS, "NVRM: Invalid page table allocation - requested size overflows.\n");
+        NV_KFREE(at, sizeof(nv_alloc_t));
+        return NULL;
+    }
+
     if (os_alloc_mem((void **)&at->page_table, pt_size) != NV_OK)
     {
         nv_printf(NV_DBG_ERRORS, "NVRM: failed to allocate page table\n");
@@ -303,7 +353,6 @@ nv_alloc_t *nvos_create_alloc(
     }
 
     memset(at->page_table, 0, pt_size);
-    at->num_pages = num_pages;
     NV_ATOMIC_SET(at->usage_count, 0);
 
     for (i = 0; i < at->num_pages; i++)
@@ -1156,6 +1205,7 @@ static int nv_start_device(nv_state_t *nv, nvidia_stack_t *sp)
 #endif
     int rc = 0;
     NvBool kthread_init = NV_FALSE;
+    NvBool remove_numa_memory_kthread_init = NV_FALSE;
     NvBool power_ref = NV_FALSE;
 
     rc = nv_get_rsync_info();
@@ -1293,6 +1343,15 @@ static int nv_start_device(nv_state_t *nv, nvidia_stack_t *sp)
         if (rc)
             goto failed;
         nv->queue = &nvl->queue;
+
+        if (nv_platform_use_auto_online(nvl))
+        {
+            rc = nv_kthread_q_init(&nvl->remove_numa_memory_q,
+                                   "nv_remove_numa_memory");
+            if (rc)
+                goto failed;
+            remove_numa_memory_kthread_init = NV_TRUE;
+        }
     }
 
     if (!rm_init_adapter(sp, nv))
@@ -1337,6 +1396,8 @@ static int nv_start_device(nv_state_t *nv, nvidia_stack_t *sp)
 
     nv->flags |= NV_FLAG_OPEN;
 
+    rm_request_dnotifier_state(sp, nv);
+
     /*
      * Now that RM init is done, allow dynamic power to control the GPU in FINE
      * mode, if enabled.  (If the mode is COARSE, this unref will do nothing
@@ -1380,6 +1441,12 @@ failed:
 
     if (kthread_init && !(nv->flags & NV_FLAG_PERSISTENT_SW_STATE))
         nv_kthread_q_stop(&nvl->bottom_half_q);
+
+    if (remove_numa_memory_kthread_init &&
+        !(nv->flags & NV_FLAG_PERSISTENT_SW_STATE))
+    {
+        nv_kthread_q_stop(&nvl->remove_numa_memory_q);
+    }
 
     if (nvl->isr_bh_unlocked_mutex)
     {
@@ -1617,7 +1684,9 @@ void nv_shutdown_adapter(nvidia_stack_t *sp,
                          nv_state_t *nv,
                          nv_linux_state_t *nvl)
 {
+#if defined(NVCPU_PPC64LE)
     validate_numa_shutdown_state(nvl);
+#endif
 
     rm_disable_adapter(sp, nv);
 
@@ -1669,6 +1738,9 @@ void nv_shutdown_adapter(nvidia_stack_t *sp,
     }
 
     rm_shutdown_adapter(sp, nv);
+
+    if (nv_platform_use_auto_online(nvl))
+        nv_kthread_q_stop(&nvl->remove_numa_memory_q);
 }
 
 /*
@@ -2223,6 +2295,7 @@ nvidia_ioctl(
             }
 
             api->status = nv_get_numa_status(nvl);
+            api->use_auto_online = nv_platform_use_auto_online(nvl);
             api->memblock_size = nv_ctl_device.numa_memblock_size;
             break;
         }
@@ -3303,6 +3376,7 @@ NV_STATUS NV_API_CALL nv_alloc_pages(
     NvU32       cache_type,
     NvBool      zeroed,
     NvBool      unencrypted,
+    NvS32       node_id,
     NvU64      *pte_array,
     void      **priv_data
 )
@@ -3314,7 +3388,7 @@ NV_STATUS NV_API_CALL nv_alloc_pages(
     NvU32 i;
     struct device *dev = NULL;
 
-    nv_printf(NV_DBG_MEMINFO, "NVRM: VM: nv_alloc_pages: %d pages\n", page_count);
+    nv_printf(NV_DBG_MEMINFO, "NVRM: VM: nv_alloc_pages: %d pages, nodeid %d\n", page_count, node_id);
     nv_printf(NV_DBG_MEMINFO, "NVRM: VM:    contig %d  cache_type %d\n",
         contiguous, cache_type);
 
@@ -3372,8 +3446,17 @@ NV_STATUS NV_API_CALL nv_alloc_pages(
      * See Bug 1920398 for more details.
      */
     if (nv && nvl->npu && !nvl->dma_dev.nvlink)
-        at->flags.node0 = NV_TRUE;
+    {
+        at->flags.node = NV_TRUE;
+        at->node_id = 0;
+    }
 #endif
+
+    if (node_id != NUMA_NO_NODE)
+    {
+        at->flags.node = NV_TRUE;
+        at->node_id = node_id;
+    }
 
     if (at->flags.contig)
         status = nv_alloc_contig_pages(nv, at);
@@ -4885,6 +4968,28 @@ NV_STATUS NV_API_CALL nv_get_device_memory_config(
 
     status = NV_OK;
 #endif
+#if defined(NVCPU_AARCH64)
+    if (node_id != NULL)
+    {
+        *node_id = nvl->numa_info.node_id;
+    }
+
+    if (compr_addr_sys_phys)
+    {
+        *compr_addr_sys_phys = nvl->coherent_link_info.gpu_mem_pa;
+    }
+    if (addr_guest_phys)
+    {
+        *addr_guest_phys = nvl->coherent_link_info.gpu_mem_pa;
+    }
+    if (addr_width)
+    {
+        // TH500 PA width - NV_PFB_PRI_MMU_ATS_ADDR_RANGE_GRANULARITY
+        *addr_width = 48 - 37;
+    }
+
+    status = NV_OK;
+#endif
 
     return status;
 }
@@ -5069,23 +5174,36 @@ void nv_linux_remove_device_locked(nv_linux_state_t *nvl)
 void NV_API_CALL nv_control_soc_irqs(nv_state_t *nv, NvBool bEnable)
 {
     int count;
+    unsigned long flags;
+    nv_linux_state_t *nvl = NV_GET_NVL_FROM_NV_STATE(nv);
 
+    if (nv->current_soc_irq != -1)
+        return;
+
+    NV_SPIN_LOCK_IRQSAVE(&nvl->soc_isr_lock, flags);
     if (bEnable)
     {
         for (count = 0; count < nv->num_soc_irqs; count++)
         {
-            nv->soc_irq_info[count].bh_pending = NV_FALSE;
-            nv->current_soc_irq = -1;
-            enable_irq(nv->soc_irq_info[count].irq_num);
+            if (nv->soc_irq_info[count].ref_count == 0)
+            {
+                nv->soc_irq_info[count].ref_count++;
+                enable_irq(nv->soc_irq_info[count].irq_num);
+            }
         }
     }
     else
     {
         for (count = 0; count < nv->num_soc_irqs; count++)
         {
-            disable_irq_nosync(nv->soc_irq_info[count].irq_num);
+            if (nv->soc_irq_info[count].ref_count == 1)
+            {
+                nv->soc_irq_info[count].ref_count--;
+                disable_irq_nosync(nv->soc_irq_info[count].irq_num);
+            }
         }
     }
+    NV_SPIN_UNLOCK_IRQRESTORE(&nvl->soc_isr_lock, flags);
 }
 
 NvU32 NV_API_CALL nv_get_dev_minor(nv_state_t *nv)
@@ -5508,4 +5626,64 @@ void NV_API_CALL nv_get_updated_emu_seg(
         *start = max((resource_size_t)*start, p->start);
         *end = min((resource_size_t)*end, p->end);
     }
+}
+
+NV_STATUS NV_API_CALL nv_get_egm_info(
+    nv_state_t *nv,
+    NvU64 *phys_addr,
+    NvU64 *size,
+    NvS32 *egm_node_id
+)
+{
+#if defined(NV_DEVICE_PROPERTY_READ_U64_PRESENT) && \
+    defined(CONFIG_ACPI_NUMA) && \
+    NV_IS_EXPORT_SYMBOL_PRESENT_pxm_to_node
+    nv_linux_state_t *nvl = NV_GET_NVL_FROM_NV_STATE(nv);
+    NvU64 pa, sz, pxm;
+
+    if (device_property_read_u64(nvl->dev, "nvidia,egm-pxm", &pxm) != 0)
+    {
+        goto failed;
+    }
+
+    if (device_property_read_u64(nvl->dev, "nvidia,egm-base-pa", &pa) != 0)
+    {
+        goto failed;
+    }
+
+    if (device_property_read_u64(nvl->dev, "nvidia,egm-size", &sz) != 0)
+    {
+        goto failed;
+    }
+
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "DSD properties: \n");
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "\tEGM base PA: 0x%llx \n", pa);
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "\tEGM size: 0x%llx \n", sz);
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "\tEGM _PXM: 0x%llx \n", pxm);
+
+    if (egm_node_id != NULL)
+    {
+        *egm_node_id = pxm_to_node(pxm);
+        nv_printf(NV_DBG_INFO, "EGM node id: %d\n", *egm_node_id);
+    }
+
+    if (phys_addr != NULL)
+    {
+        *phys_addr = pa;
+        nv_printf(NV_DBG_INFO, "EGM base addr: 0x%llx\n", *phys_addr);
+    }
+
+    if (size != NULL)
+    {
+        *size = sz;
+        nv_printf(NV_DBG_INFO, "EGM size: 0x%llx\n", *size);
+    }
+
+    return NV_OK;
+
+failed:
+#endif // NV_DEVICE_PROPERTY_READ_U64_PRESENT
+
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "Cannot get EGM info\n");
+    return NV_ERR_NOT_SUPPORTED;
 }

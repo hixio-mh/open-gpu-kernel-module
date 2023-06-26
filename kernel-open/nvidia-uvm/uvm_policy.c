@@ -30,7 +30,7 @@
 #include "uvm_gpu.h"
 #include "uvm_va_space_mm.h"
 
-bool uvm_is_valid_vma_range(struct mm_struct *mm, NvU64 start, NvU64 length)
+static bool uvm_is_valid_vma_range(struct mm_struct *mm, NvU64 start, NvU64 length)
 {
     const NvU64 end = start + length;
     struct vm_area_struct *vma;
@@ -50,7 +50,7 @@ bool uvm_is_valid_vma_range(struct mm_struct *mm, NvU64 start, NvU64 length)
     return false;
 }
 
-NV_STATUS uvm_api_range_type_check(uvm_va_space_t *va_space, struct mm_struct *mm, NvU64 base, NvU64 length)
+uvm_api_range_type_t uvm_api_range_type_check(uvm_va_space_t *va_space, struct mm_struct *mm, NvU64 base, NvU64 length)
 {
     uvm_va_range_t *va_range, *va_range_last;
     const NvU64 last_address = base + length - 1;
@@ -61,21 +61,23 @@ NV_STATUS uvm_api_range_type_check(uvm_va_space_t *va_space, struct mm_struct *m
     uvm_assert_rwsem_locked(&va_space->lock);
 
     if (uvm_api_range_invalid(base, length))
-        return NV_ERR_INVALID_ADDRESS;
+        return UVM_API_RANGE_TYPE_INVALID;
 
     // Check if passed interval overlaps with any VA range.
     if (uvm_va_space_range_empty(va_space, base, last_address)) {
         if (g_uvm_global.ats.enabled &&
             uvm_va_space_pageable_mem_access_supported(va_space) &&
             mm &&
-            uvm_is_valid_vma_range(mm, base, length))
-            return NV_WARN_NOTHING_TO_DO;
-        else if (uvm_hmm_is_enabled(va_space) &&
-                 mm &&
-                 uvm_is_valid_vma_range(mm, base, length))
-            return NV_OK;
-        else
-            return NV_ERR_INVALID_ADDRESS;
+            uvm_is_valid_vma_range(mm, base, length)) {
+
+            return UVM_API_RANGE_TYPE_ATS;
+        }
+        else if (uvm_hmm_is_enabled(va_space) && mm && uvm_is_valid_vma_range(mm, base, length)) {
+            return UVM_API_RANGE_TYPE_HMM;
+        }
+        else {
+            return UVM_API_RANGE_TYPE_INVALID;
+        }
     }
 
     va_range_last = NULL;
@@ -86,10 +88,10 @@ NV_STATUS uvm_api_range_type_check(uvm_va_space_t *va_space, struct mm_struct *m
     // Check if passed interval overlaps with an unmanaged VA range, or a
     // sub-interval not tracked by a VA range
     if (!va_range_last || va_range_last->node.end < last_address)
-        return NV_ERR_INVALID_ADDRESS;
+        return UVM_API_RANGE_TYPE_INVALID;
 
     // Passed interval is fully covered by managed VA ranges
-    return NV_OK;
+    return UVM_API_RANGE_TYPE_MANAGED;
 }
 
 static NV_STATUS split_as_needed(uvm_va_space_t *va_space,
@@ -141,7 +143,7 @@ static NV_STATUS split_span_as_needed(uvm_va_space_t *va_space,
     return split_as_needed(va_space, end_addr, split_needed_cb, data);
 }
 
-static bool preferred_location_is_split_needed(uvm_va_policy_t *policy, void *data)
+static bool preferred_location_is_split_needed(const uvm_va_policy_t *policy, void *data)
 {
     uvm_processor_id_t processor_id;
 
@@ -152,12 +154,13 @@ static bool preferred_location_is_split_needed(uvm_va_policy_t *policy, void *da
 }
 
 static NV_STATUS preferred_location_unmap_remote_pages(uvm_va_block_t *va_block,
-                                                       uvm_va_block_context_t *va_block_context)
+                                                       uvm_va_block_context_t *va_block_context,
+                                                       uvm_va_block_region_t region)
 {
     NV_STATUS status = NV_OK;
     NV_STATUS tracker_status;
     uvm_tracker_t local_tracker = UVM_TRACKER_INIT();
-    uvm_va_policy_t *policy = va_block_context->policy;
+    const uvm_va_policy_t *policy = va_block_context->policy;
     uvm_processor_id_t preferred_location = policy->preferred_location;
     uvm_va_space_t *va_space = uvm_va_block_get_va_space(va_block);
     const uvm_page_mask_t *mapped_mask;
@@ -185,7 +188,7 @@ static NV_STATUS preferred_location_unmap_remote_pages(uvm_va_block_t *va_block,
     status = uvm_va_block_unmap(va_block,
                                 va_block_context,
                                 preferred_location,
-                                uvm_va_block_region_from_block(va_block),
+                                region,
                                 &va_block_context->caller_page_mask,
                                 &local_tracker);
 
@@ -200,17 +203,15 @@ done:
 }
 
 NV_STATUS uvm_va_block_set_preferred_location_locked(uvm_va_block_t *va_block,
-                                                     uvm_va_block_context_t *va_block_context)
+                                                     uvm_va_block_context_t *va_block_context,
+                                                     uvm_va_block_region_t region)
 {
     uvm_assert_mutex_locked(&va_block->lock);
-    // TODO: Bug 1750144: remove this restriction when HMM handles setting
-    // the preferred location semantics instead of just recording the policy.
-    UVM_ASSERT(!uvm_va_block_is_hmm(va_block));
-    UVM_ASSERT(va_block_context->policy == uvm_va_range_get_policy(va_block->va_range));
 
-    uvm_va_block_mark_cpu_dirty(va_block);
+    if (!uvm_va_block_is_hmm(va_block))
+        uvm_va_block_mark_cpu_dirty(va_block);
 
-    return preferred_location_unmap_remote_pages(va_block, va_block_context);
+    return preferred_location_unmap_remote_pages(va_block, va_block_context, region);
 }
 
 static NV_STATUS preferred_location_set(uvm_va_space_t *va_space,
@@ -278,12 +279,12 @@ static NV_STATUS preferred_location_set(uvm_va_space_t *va_space,
         return NV_OK;
     }
 
-    return uvm_hmm_set_preferred_location(va_space, preferred_location, base, last_address);
+    return uvm_hmm_set_preferred_location(va_space, preferred_location, base, last_address, out_tracker);
 }
 
 NV_STATUS uvm_api_set_preferred_location(const UVM_SET_PREFERRED_LOCATION_PARAMS *params, struct file *filp)
 {
-    NV_STATUS status;
+    NV_STATUS status = NV_OK;
     NV_STATUS tracker_status;
     uvm_tracker_t local_tracker = UVM_TRACKER_INIT();
     uvm_va_space_t *va_space = uvm_va_space_get(filp);
@@ -295,7 +296,7 @@ NV_STATUS uvm_api_set_preferred_location(const UVM_SET_PREFERRED_LOCATION_PARAMS
     const NvU64 start = params->requestedBase;
     const NvU64 length = params->length;
     const NvU64 end = start + length - 1;
-    bool range_is_ats = false;
+    uvm_api_range_type_t type;
 
     UVM_ASSERT(va_space);
 
@@ -303,13 +304,10 @@ NV_STATUS uvm_api_set_preferred_location(const UVM_SET_PREFERRED_LOCATION_PARAMS
     uvm_va_space_down_write(va_space);
     has_va_space_write_lock = true;
 
-    status = uvm_api_range_type_check(va_space, mm, start, length);
-    if (status != NV_OK) {
-        if (status != NV_WARN_NOTHING_TO_DO)
-            goto done;
-
-        status = NV_OK;
-        range_is_ats = true;
+    type = uvm_api_range_type_check(va_space, mm, start, length);
+    if (type == UVM_API_RANGE_TYPE_INVALID) {
+        status = NV_ERR_INVALID_ADDRESS;
+        goto done;
     }
 
     // If the CPU is the preferred location, we don't have to find the associated uvm_gpu_t
@@ -334,10 +332,23 @@ NV_STATUS uvm_api_set_preferred_location(const UVM_SET_PREFERRED_LOCATION_PARAMS
 
     UVM_ASSERT(status == NV_OK);
 
-    // TODO: Bug 2098544: On ATS systems, honor the preferred location policy
-    // for system memory ranges instead of ignoring it.
-    if (range_is_ats)
+    // UvmSetPreferredLocation on non-ATS regions targets the VA range of the
+    // associated file descriptor, not the calling process. Since
+    // UvmSetPreferredLocation on ATS regions are handled in userspace,
+    // implementing the non-ATS behavior is not possible. So, return an error
+    // instead. Although the out of process case can be supported for HMM,
+    // return an error to make the API behavior consistent for all SAM regions.
+    if ((type != UVM_API_RANGE_TYPE_MANAGED) && (current->mm != mm)) {
+        status = NV_ERR_NOT_SUPPORTED;
         goto done;
+    }
+
+    // For ATS regions, let userspace handle it.
+    if (type == UVM_API_RANGE_TYPE_ATS) {
+        UVM_ASSERT(g_uvm_global.ats.enabled);
+        status = NV_WARN_NOTHING_TO_DO;
+        goto done;
+    }
 
     status = preferred_location_set(va_space, mm, start, length, preferred_location_id, &first_va_range_to_migrate, &local_tracker);
     if (status != NV_OK)
@@ -385,19 +396,38 @@ NV_STATUS uvm_api_unset_preferred_location(const UVM_UNSET_PREFERRED_LOCATION_PA
     uvm_va_space_t *va_space = uvm_va_space_get(filp);
     struct mm_struct *mm;
     uvm_tracker_t local_tracker = UVM_TRACKER_INIT();
+    uvm_api_range_type_t type;
 
     UVM_ASSERT(va_space);
 
     mm = uvm_va_space_mm_or_current_retain_lock(va_space);
     uvm_va_space_down_write(va_space);
 
-    status = uvm_api_range_type_check(va_space, mm, params->requestedBase, params->length);
+    type = uvm_api_range_type_check(va_space, mm, params->requestedBase, params->length);
+    if (type == UVM_API_RANGE_TYPE_INVALID) {
+        status = NV_ERR_INVALID_ADDRESS;
+        goto done;
+    }
 
-    if (status == NV_OK)
-        status = preferred_location_set(va_space, mm, params->requestedBase, params->length, UVM_ID_INVALID, NULL, &local_tracker);
-    else if (status == NV_WARN_NOTHING_TO_DO)
-        status = NV_OK;
+    if ((type != UVM_API_RANGE_TYPE_MANAGED) && (current->mm != mm)) {
+        status = NV_ERR_NOT_SUPPORTED;
+        goto done;
+    }
 
+    if (type == UVM_API_RANGE_TYPE_ATS) {
+        status = NV_WARN_NOTHING_TO_DO;
+        goto done;
+    }
+
+    status = preferred_location_set(va_space,
+                                    mm,
+                                    params->requestedBase,
+                                    params->length,
+                                    UVM_ID_INVALID,
+                                    NULL,
+                                    &local_tracker);
+
+done:
     tracker_status = uvm_tracker_wait_deinit(&local_tracker);
 
     uvm_va_space_up_write(va_space);
@@ -405,20 +435,22 @@ NV_STATUS uvm_api_unset_preferred_location(const UVM_UNSET_PREFERRED_LOCATION_PA
     return status == NV_OK ? tracker_status : status;
 }
 
-static NV_STATUS va_block_set_accessed_by_locked(uvm_va_block_t *va_block,
-                                                 uvm_va_block_context_t *va_block_context,
-                                                 uvm_processor_id_t processor_id,
-                                                 uvm_tracker_t *out_tracker)
+NV_STATUS uvm_va_block_set_accessed_by_locked(uvm_va_block_t *va_block,
+                                              uvm_va_block_context_t *va_block_context,
+                                              uvm_processor_id_t processor_id,
+                                              uvm_va_block_region_t region,
+                                              uvm_tracker_t *out_tracker)
 {
     NV_STATUS status;
     NV_STATUS tracker_status;
 
     uvm_assert_mutex_locked(&va_block->lock);
+    UVM_ASSERT(uvm_va_block_check_policy_is_valid(va_block, va_block_context->policy, region));
 
     status = uvm_va_block_add_mappings(va_block,
                                        va_block_context,
                                        processor_id,
-                                       uvm_va_block_region_from_block(va_block),
+                                       region,
                                        NULL,
                                        UvmEventMapRemoteCausePolicy);
 
@@ -432,6 +464,7 @@ NV_STATUS uvm_va_block_set_accessed_by(uvm_va_block_t *va_block,
                                        uvm_processor_id_t processor_id)
 {
     uvm_va_space_t *va_space = uvm_va_block_get_va_space(va_block);
+    uvm_va_block_region_t region = uvm_va_block_region_from_block(va_block);
     NV_STATUS status;
     uvm_tracker_t local_tracker = UVM_TRACKER_INIT();
 
@@ -443,11 +476,13 @@ NV_STATUS uvm_va_block_set_accessed_by(uvm_va_block_t *va_block,
     if (uvm_va_policy_is_read_duplicate(va_block_context->policy, va_space))
         return NV_OK;
 
-    status = UVM_VA_BLOCK_LOCK_RETRY(va_block, NULL,
-                                     va_block_set_accessed_by_locked(va_block,
-                                                                     va_block_context,
-                                                                     processor_id,
-                                                                     &local_tracker));
+    status = UVM_VA_BLOCK_LOCK_RETRY(va_block,
+                                     NULL,
+                                     uvm_va_block_set_accessed_by_locked(va_block,
+                                                                         va_block_context,
+                                                                         processor_id,
+                                                                         region,
+                                                                         &local_tracker));
 
     // TODO: Bug 1767224: Combine all accessed_by operations into single tracker
     if (status == NV_OK)
@@ -463,7 +498,7 @@ typedef struct
     bool set_bit;
 } accessed_by_split_params_t;
 
-static bool accessed_by_is_split_needed(uvm_va_policy_t *policy, void *data)
+static bool accessed_by_is_split_needed(const uvm_va_policy_t *policy, void *data)
 {
     accessed_by_split_params_t *params = (accessed_by_split_params_t*)data;
 
@@ -479,26 +514,23 @@ static NV_STATUS accessed_by_set(uvm_va_space_t *va_space,
                                  bool set_bit)
 {
     uvm_processor_id_t processor_id = UVM_ID_INVALID;
-    uvm_va_range_t *va_range, *va_range_last;
     struct mm_struct *mm;
     const NvU64 last_address = base + length - 1;
-    bool range_is_sysmem = false;
     accessed_by_split_params_t split_params;
     uvm_tracker_t local_tracker = UVM_TRACKER_INIT();
-    NV_STATUS status;
+    NV_STATUS status = NV_OK;
     NV_STATUS tracker_status;
+    uvm_api_range_type_t type;
 
     UVM_ASSERT(va_space);
 
     mm = uvm_va_space_mm_or_current_retain_lock(va_space);
     uvm_va_space_down_write(va_space);
 
-    status = uvm_api_range_type_check(va_space, mm, base, length);
-    if (status != NV_OK) {
-        if (status != NV_WARN_NOTHING_TO_DO)
-            goto done;
-        status = NV_OK;
-        range_is_sysmem = true;
+    type = uvm_api_range_type_check(va_space, mm, base, length);
+    if (type == UVM_API_RANGE_TYPE_INVALID) {
+        status = NV_ERR_INVALID_ADDRESS;
+        goto done;
     }
 
     if (uvm_uuid_is_cpu(processor_uuid)) {
@@ -519,8 +551,10 @@ static NV_STATUS accessed_by_set(uvm_va_space_t *va_space,
         processor_id = gpu->id;
     }
 
-    if (range_is_sysmem)
+    if (type == UVM_API_RANGE_TYPE_ATS) {
+        status = NV_OK;
         goto done;
+    }
 
     split_params.processor_id = processor_id;
     split_params.set_bit = set_bit;
@@ -532,35 +566,35 @@ static NV_STATUS accessed_by_set(uvm_va_space_t *va_space,
     if (status != NV_OK)
         goto done;
 
-    va_range_last = NULL;
-    uvm_for_each_managed_va_range_in_contig(va_range, va_space, base, last_address) {
-        va_range_last = va_range;
+    if (type == UVM_API_RANGE_TYPE_MANAGED) {
+        uvm_va_range_t *va_range;
+        uvm_va_range_t *va_range_last = NULL;
 
-        // If we didn't split the ends, check that they match
-        if (va_range->node.start < base || va_range->node.end > last_address)
-            UVM_ASSERT(uvm_processor_mask_test(&uvm_va_range_get_policy(va_range)->accessed_by,
-                                               processor_id) == set_bit);
+        uvm_for_each_managed_va_range_in_contig(va_range, va_space, base, last_address) {
+            va_range_last = va_range;
 
-        if (set_bit) {
-            status = uvm_va_range_set_accessed_by(va_range, processor_id, mm, &local_tracker);
-            if (status != NV_OK)
-                goto done;
+            // If we didn't split the ends, check that they match
+            if (va_range->node.start < base || va_range->node.end > last_address)
+                UVM_ASSERT(uvm_processor_mask_test(&uvm_va_range_get_policy(va_range)->accessed_by,
+                                                   processor_id) == set_bit);
+
+            if (set_bit) {
+                status = uvm_va_range_set_accessed_by(va_range, processor_id, mm, &local_tracker);
+                if (status != NV_OK)
+                    goto done;
+            }
+            else {
+                uvm_va_range_unset_accessed_by(va_range, processor_id, &local_tracker);
+            }
         }
-        else {
-            uvm_va_range_unset_accessed_by(va_range, processor_id, &local_tracker);
-        }
-    }
 
-    if (va_range_last) {
+        UVM_ASSERT(va_range_last);
         UVM_ASSERT(va_range_last->node.end >= last_address);
-        goto done;
     }
-
-    status = uvm_hmm_set_accessed_by(va_space,
-                                     processor_id,
-                                     set_bit,
-                                     base,
-                                     last_address);
+    else {
+        UVM_ASSERT(type == UVM_API_RANGE_TYPE_HMM);
+        status = uvm_hmm_set_accessed_by(va_space, processor_id, set_bit, base, last_address, &local_tracker);
+    }
 
 done:
     tracker_status = uvm_tracker_wait_deinit(&local_tracker);
@@ -641,7 +675,7 @@ static NV_STATUS va_block_unset_read_duplication_locked(uvm_va_block_t *va_block
     uvm_processor_id_t processor_id;
     uvm_va_block_region_t block_region = uvm_va_block_region_from_block(va_block);
     uvm_page_mask_t *break_read_duplication_pages = &va_block_context->caller_page_mask;
-    uvm_va_policy_t *policy = va_block_context->policy;
+    const uvm_va_policy_t *policy = va_block_context->policy;
     uvm_processor_id_t preferred_location = policy->preferred_location;
     uvm_processor_mask_t accessed_by = policy->accessed_by;
 
@@ -703,10 +737,11 @@ static NV_STATUS va_block_unset_read_duplication_locked(uvm_va_block_t *va_block
 
     // 2- Re-establish SetAccessedBy mappings
     for_each_id_in_mask(processor_id, &accessed_by) {
-        status = va_block_set_accessed_by_locked(va_block,
-                                                 va_block_context,
-                                                 processor_id,
-                                                 out_tracker);
+        status = uvm_va_block_set_accessed_by_locked(va_block,
+                                                     va_block_context,
+                                                     processor_id,
+                                                     block_region,
+                                                     out_tracker);
         if (status != NV_OK)
             return status;
     }
@@ -738,7 +773,7 @@ NV_STATUS uvm_va_block_unset_read_duplication(uvm_va_block_t *va_block,
     return status;
 }
 
-static bool read_duplication_is_split_needed(uvm_va_policy_t *policy, void *data)
+static bool read_duplication_is_split_needed(const uvm_va_policy_t *policy, void *data)
 {
     uvm_read_duplication_policy_t new_policy;
 
@@ -750,11 +785,11 @@ static bool read_duplication_is_split_needed(uvm_va_policy_t *policy, void *data
 
 static NV_STATUS read_duplication_set(uvm_va_space_t *va_space, NvU64 base, NvU64 length, bool enable)
 {
-    uvm_va_range_t *va_range, *va_range_last;
     struct mm_struct *mm;
     const NvU64 last_address = base + length - 1;
     NV_STATUS status;
     uvm_read_duplication_policy_t new_policy;
+    uvm_api_range_type_t type;
 
     UVM_ASSERT(va_space);
 
@@ -762,11 +797,13 @@ static NV_STATUS read_duplication_set(uvm_va_space_t *va_space, NvU64 base, NvU6
     mm = uvm_va_space_mm_or_current_retain_lock(va_space);
     uvm_va_space_down_write(va_space);
 
-    status = uvm_api_range_type_check(va_space, mm, base, length);
-    if (status != NV_OK) {
-        if (status == NV_WARN_NOTHING_TO_DO)
-            status = NV_OK;
-
+    type = uvm_api_range_type_check(va_space, mm, base, length);
+    if (type == UVM_API_RANGE_TYPE_INVALID) {
+        status = NV_ERR_INVALID_ADDRESS;
+        goto done;
+    }
+    else if (type == UVM_API_RANGE_TYPE_ATS) {
+        status = NV_OK;
         goto done;
     }
 
@@ -781,43 +818,44 @@ static NV_STATUS read_duplication_set(uvm_va_space_t *va_space, NvU64 base, NvU6
     if (status != NV_OK)
         goto done;
 
-    va_range_last = NULL;
-    uvm_for_each_managed_va_range_in_contig(va_range, va_space, base, last_address) {
-        va_range_last = va_range;
+    if (type == UVM_API_RANGE_TYPE_MANAGED) {
+        uvm_va_range_t *va_range;
+        uvm_va_range_t *va_range_last = NULL;
 
-        // If we didn't split the ends, check that they match
-        if (va_range->node.start < base || va_range->node.end > last_address)
-            UVM_ASSERT(uvm_va_range_get_policy(va_range)->read_duplication == new_policy);
+        uvm_for_each_managed_va_range_in_contig(va_range, va_space, base, last_address) {
+            va_range_last = va_range;
 
-        // If the va_space cannot currently read duplicate, only change the user
-        // state. All memory should already have read duplication unset.
-        if (uvm_va_space_can_read_duplicate(va_space, NULL)) {
+            // If we didn't split the ends, check that they match
+            if (va_range->node.start < base || va_range->node.end > last_address)
+                UVM_ASSERT(uvm_va_range_get_policy(va_range)->read_duplication == new_policy);
 
-            // Handle SetAccessedBy mappings
-            if (new_policy == UVM_READ_DUPLICATION_ENABLED) {
-                status = uvm_va_range_set_read_duplication(va_range, mm);
-                if (status != NV_OK)
-                    goto done;
+            // If the va_space cannot currently read duplicate, only change the user
+            // state. All memory should already have read duplication unset.
+            if (uvm_va_space_can_read_duplicate(va_space, NULL)) {
+
+                // Handle SetAccessedBy mappings
+                if (new_policy == UVM_READ_DUPLICATION_ENABLED) {
+                    status = uvm_va_range_set_read_duplication(va_range, mm);
+                    if (status != NV_OK)
+                        goto done;
+                }
+                else {
+                    // If unsetting read duplication fails, the return status is
+                    // not propagated back to the caller
+                    (void)uvm_va_range_unset_read_duplication(va_range, mm);
+                }
             }
-            else {
-                // If unsetting read duplication fails, the return status is
-                // not propagated back to the caller
-                (void)uvm_va_range_unset_read_duplication(va_range, mm);
-            }
+
+            uvm_va_range_get_policy(va_range)->read_duplication = new_policy;
         }
 
-        uvm_va_range_get_policy(va_range)->read_duplication = new_policy;
-    }
-
-    if (va_range_last) {
+        UVM_ASSERT(va_range_last);
         UVM_ASSERT(va_range_last->node.end >= last_address);
-        goto done;
     }
-
-    status = uvm_hmm_set_read_duplication(va_space,
-                                          new_policy,
-                                          base,
-                                          last_address);
+    else {
+        UVM_ASSERT(type == UVM_API_RANGE_TYPE_HMM);
+        status = uvm_hmm_set_read_duplication(va_space, new_policy, base, last_address);
+    }
 
 done:
     uvm_va_space_up_write(va_space);

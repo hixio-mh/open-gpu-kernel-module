@@ -106,9 +106,13 @@
  *     Default behavior
  * NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY
  *     Use halspec from parent without adding the new created object the child tree
+ * NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT
+ *     Skip memory allocation on object create, assume the argument points to memory
+ *     already allocated.
  */
 #define NVOC_OBJ_CREATE_FLAGS_NONE                          0x0000u
 #define NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY           0x0001u
+#define NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT            0x0002u
 
 /*!
  * @brief Create and construct a new object by class name.
@@ -166,7 +170,7 @@
     __nvoc_objCreateDynamic((ppNewObj), staticCast((pParent), Dynamic),            \
                             (pClassInfo), (NVOC_OBJ_CREATE_FLAGS_NONE), ##__VA_ARGS__)
 #define objCreateDynamicWithFlags(ppNewObj, pParent, pClassInfo, flags, ...) \
-    __nvoc_objCreateDynamic((ppNewObj), staticCast((pParent), Dynamic),            \
+    __nvoc_objCreateDynamic((ppNewObj), staticCast((pParent), Dynamic),      \
                             (pClassInfo), (flags), ##__VA_ARGS__)
 
 /*!

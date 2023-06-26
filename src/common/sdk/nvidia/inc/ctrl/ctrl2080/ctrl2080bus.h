@@ -27,7 +27,7 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl2080/ctrl2080bus.finn
+// Source file:      ctrl/ctrl2080/ctrl2080bus.finn
 //
 
 #include "nvcfg_sdk.h"
@@ -244,10 +244,7 @@ typedef struct NV2080_CTRL_BUS_GET_PCI_INFO_PARAMS {
  *
  */
 
-typedef struct NV2080_CTRL_BUS_INFO {
-    NvU32 index;
-    NvU32 data;
-} NV2080_CTRL_BUS_INFO;
+typedef NVXXXX_CTRL_XXX_INFO NV2080_CTRL_BUS_INFO;
 
 /* valid bus info index values */
 
@@ -1397,10 +1394,14 @@ typedef struct NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS_PARAMS {
  *       NV_OK and bIsLinkUp is NV_TRUE.
  *   nrLinks[OUT]
  *       Total number of C2C links that are up.
+ *   maxNrLinks[OUT]
+ *       Maximum number of C2C links that are supported.
  *   linkMask[OUT]
  *       Bitmask of the C2C links present and up.
  *   perLinkBwMBps[OUT]
  *       Theoretical per link bandwidth in MBps.
+ *   perLinkLaneWidth[OUT]
+ *       Lane width per link.
  *   remoteType[OUT]
  *       Type of the device connected to the remote end of the C2C link.
  *       Valid values are :
@@ -1418,6 +1419,11 @@ typedef struct NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS_PARAMS {
  *       NV2080_CTRL_BUS_GET_C2C_INFO_REMOTE_TYPE_CPU - connected to a CPU
  */
 
+ /*
+ *                                                      in either self-hosted mode or
+ *                                                      externally-hostedmode.
+ */
+
 
 
 #define NV2080_CTRL_CMD_BUS_GET_C2C_INFO                            (0x2080182b) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_BUS_INTERFACE_ID << 8) | NV2080_CTRL_CMD_BUS_GET_C2C_INFO_PARAMS_MESSAGE_ID" */
@@ -1427,8 +1433,10 @@ typedef struct NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS_PARAMS {
 typedef struct NV2080_CTRL_CMD_BUS_GET_C2C_INFO_PARAMS {
     NvBool bIsLinkUp;
     NvU32  nrLinks;
+    NvU32  maxNrLinks;
     NvU32  linkMask;
     NvU32  perLinkBwMBps;
+    NvU32  perLinkLaneWidth;
     NvU32  remoteType;
 } NV2080_CTRL_CMD_BUS_GET_C2C_INFO_PARAMS;
 
@@ -1542,6 +1550,7 @@ typedef struct NV2080_CTRL_BUS_GET_C2C_ERR_INFO_PARAMS {
 typedef struct NV2080_CTRL_BUS_SET_P2P_MAPPING_PARAMS {
     NvU32  connectionType;
     NvU32  peerId;
+    NvBool bEgmPeer;
     NvBool bSpaAccessOnly;
     NvBool bUseUuid;
     NvU32  remoteGpuId;

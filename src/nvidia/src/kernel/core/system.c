@@ -47,6 +47,7 @@
 #include "platform/cpu.h"
 #include "platform/platform.h"
 #include "diagnostics/gpu_acct.h"
+#include "platform/platform_request_handler.h"
 #include "gpu/external_device/gsync.h"
 #include "virtualization/kernel_vgpu_mgr.h"
 #include "mem_mgr/virt_mem_mgr.h"
@@ -83,6 +84,7 @@ static sysChildObject sysChildObjects[] =
     { NV_OFFSETOF(OBJSYS, pGpuMgr),         classInfo(OBJGPUMGR),       NV_TRUE },
     { NV_OFFSETOF(OBJSYS, pGsyncMgr),       classInfo(OBJGSYNCMGR),     NV_TRUE },
     { NV_OFFSETOF(OBJSYS, pGpuAcct),        classInfo(GpuAccounting),   NV_TRUE },
+    { NV_OFFSETOF(OBJSYS, pPlatformRequestHandler), classInfo(PlatformRequestHandler),  NV_TRUE },
     { NV_OFFSETOF(OBJSYS, pRcDB),           classInfo(OBJRCDB),         NV_TRUE },
     { NV_OFFSETOF(OBJSYS, pVmm),            classInfo(OBJVMM),          NV_TRUE },
     { NV_OFFSETOF(OBJSYS, pKernelVgpuMgr),  classInfo(KernelVgpuMgr),   NV_TRUE },
@@ -172,6 +174,7 @@ sysDestruct_IMPL(OBJSYS *pSys)
     //
     listDestroy(&g_clientListBehindGpusLock);
     listDestroy(&g_userInfoList);
+    multimapDestroy(&g_osInfoList);
 
     rmapiShutdown();
     osSyncWithRmDestroy();
@@ -199,7 +202,7 @@ _sysCreateChildObjects(OBJSYS *pSys)
     NV_STATUS status = NV_OK;
     NvU32 i, n;
 
-    n = NV_ARRAY_ELEMENTS32(sysChildObjects);
+    n = NV_ARRAY_ELEMENTS(sysChildObjects);
 
     for (i = 0; i < n; i++)
     {
@@ -251,7 +254,7 @@ _sysDeleteChildObjects(OBJSYS *pSys)
 
     osRmCapUnregister(&pSys->pOsRmCaps);
 
-    for (i = NV_ARRAY_ELEMENTS32(sysChildObjects) - 1; i >= 0; i--)
+    for (i = NV_ARRAY_ELEMENTS(sysChildObjects) - 1; i >= 0; i--)
     {
         NvLength offset = sysChildObjects[i].childOffset;
         Dynamic **ppChild = reinterpretCast(reinterpretCast(pSys, NvU8*) + offset, Dynamic**);
@@ -317,6 +320,24 @@ _sysRegistryOverrideResourceServer
     else
     {
         pSys->apiLockModuleMask = RM_LOCK_MODULE_GRP(RM_LOCK_MODULES_CLIENT);
+    }
+
+    if (osReadRegistryDword(pGpu, NV_REG_STR_RM_CLIENT_HANDLE_LOOKUP,
+                            &data32) == NV_OK)
+    {
+        pSys->setProperty(pSys, PDB_PROP_SYS_CLIENT_HANDLE_LOOKUP, !!data32);
+    }
+
+    if (osReadRegistryDword(pGpu, NV_REG_STR_RM_CLIENT_LIST_DEFERRED_FREE,
+                            &data32) == NV_OK)
+    {
+        pSys->bUseDeferredClientListFree = !!data32;
+    }
+
+    if (osReadRegistryDword(pGpu, NV_REG_STR_RM_CLIENT_LIST_DEFERRED_FREE_LIMIT,
+                            &data32) == NV_OK)
+    {
+        pSys->clientListDeferredFreeLimit = data32;
     }
 }
 
@@ -649,15 +670,6 @@ sysInitRegistryOverrides_IMPL
         pSys->setProperty(pSys, PDB_PROP_SYS_PRIORITY_THROTTLE_DELAY_US, data32);
     }
 
-    if (osReadRegistryDword(pGpu, NV_REG_STR_RM_MULTICAST_FLA,
-                            &data32) == NV_OK)
-    {
-        if (data32 == NV_REG_STR_RM_MULTICAST_FLA_ENABLED)
-        {
-            pSys->bMulticastFlaEnabled = NV_TRUE;
-        }
-    }
-
     _sysRegistryOverrideExternalFabricMgmt(pSys, pGpu);
     _sysRegistryOverrideResourceServer(pSys, pGpu);
 
@@ -671,6 +683,8 @@ sysInitRegistryOverrides_IMPL
     {
         pSys->setProperty(pSys, PDB_PROP_SYS_ROUTE_TO_PHYSICAL_LOCK_BYPASS, !!data32);
     }
+
+    gpumgrSetGpuNvlinkBwModeFromRegistry(pGpu);
 }
 
 void

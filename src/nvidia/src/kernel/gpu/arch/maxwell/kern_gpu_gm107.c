@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -22,8 +22,10 @@
  */
 
 #include "gpu/gpu.h"
+#include "gpu/gpu_child_class_defs.h"
+#include "gpu_mgr/gpu_mgr_sli.h"
 #include "gpu/bif/kernel_bif.h"
-
+#include "jt.h"
 #include "published/maxwell/gm107/dev_bus.h"
 #include "published/maxwell/gm107/dev_nv_xve.h"
 #include "published/maxwell/gm107/dev_nv_xve1.h"
@@ -375,9 +377,11 @@ gpuGetIdInfo_GM107(OBJGPU *pGpu)
 static const GPUCHILDORDER
 gpuChildOrderList_GM200[] =
 {
+    {classId(ConfidentialCompute),      GCO_ALL},
+    {classId(Pxuc),               GCO_ALL},
     {classId(OBJBIF),             GCO_ALL},
     {classId(KernelBif),          GCO_ALL},
-    {classId(OBJNNE),             GCO_ALL},
+    {classId(Nne),                GCO_ALL},
     {classId(NvDebugDump),        GCO_ALL},
     {classId(ClockManager),       GCO_ALL},
     {classId(Pmgr),               GCO_ALL},
@@ -469,7 +473,7 @@ gpuChildOrderList_GM200[] =
 const GPUCHILDORDER *
 gpuGetChildrenOrder_GM200(OBJGPU *pGpu, NvU32 *pNumEntries)
 {
-    *pNumEntries = NV_ARRAY_ELEMENTS32(gpuChildOrderList_GM200);
+    *pNumEntries = NV_ARRAY_ELEMENTS(gpuChildOrderList_GM200);
     return gpuChildOrderList_GM200;
 }
 
@@ -487,68 +491,146 @@ gpuGetChildrenOrder_GM200(OBJGPU *pGpu, NvU32 *pNumEntries)
 //
 static const GPUCHILDPRESENT gpuChildrenPresent_GM200[] =
 {
-    {classId(OBJSWENG), 1},
-    {classId(OBJACR), 1},
-    {classId(OBJBIF), 1},
-    {classId(KernelBif), 1},
-    {classId(OBJBSP), 1},
-    {classId(OBJBUS), 1},
-    {classId(KernelBus), 1},
-    {classId(OBJCE), 3},
-    {classId(KernelCE), 3},
-    {classId(OBJCIPHER), 1},
-    {classId(ClockManager), 1},
-    {classId(OBJDISP), 1},
-    {classId(KernelDisplay), 1},
-    {classId(VirtMemAllocator), 1},
-    {classId(OBJDPAUX), 1},
-    {classId(Fan), 1},
-    {classId(OBJHSHUBMANAGER), 1},
-    {classId(Hshub), 1},
-    {classId(MemorySystem), 1},
-    {classId(KernelMemorySystem), 1},
-    {classId(MemoryManager), 1},
-    {classId(KernelFifo), 1},
-    {classId(OBJFIFO), 1},
-    {classId(OBJGMMU), 1},
-    {classId(KernelGmmu), 1},
-    {classId(OBJGPULOG), 1},
-    {classId(OBJGPUMON), 1},
-    {classId(GraphicsManager), 1},
-    {classId(MIGManager), 1},
-    {classId(KernelMIGManager), 1},
-    {classId(KernelGraphicsManager), 1},
-    {classId(Graphics), 1},
-    {classId(KernelGraphics), 1},
-    {classId(OBJHDA), 1},
-    {classId(OBJHDACODEC), 1},
-    {classId(OBJHWPM), 1},
-    {classId(OBJINFOROM), 1},
-    {classId(Intr), 1},
-    {classId(Lpwr   ), 1},
-    {classId(OBJLSFM), 1},
-    {classId(OBJMC), 1},
-    {classId(KernelMc), 1},
-    {classId(PrivRing), 1},
-    {classId(SwIntr), 1},
-    {classId(OBJMSENC), 2},
-    {classId(NvDebugDump), 1},
-    {classId(Perf), 1},
-    {classId(KernelPerf), 1},
-    {classId(Pmgr), 1},
-    {classId(Pmu), 1},
-    {classId(KernelPmu), 1},
-    {classId(OBJSEC2), 1},
-    {classId(Therm), 1},
-    {classId(OBJTMR), 1},
-    {classId(OBJVOLT), 1},
-    {classId(OBJGRIDDISPLAYLESS), 1},
+    GPU_CHILD_PRESENT(OBJTMR, 1),
+    GPU_CHILD_PRESENT(KernelMIGManager, 1),
+    GPU_CHILD_PRESENT(KernelGraphicsManager, 1),
+    GPU_CHILD_PRESENT(KernelRc, 1),
+    GPU_CHILD_PRESENT(Intr, 1),
+    GPU_CHILD_PRESENT(NvDebugDump, 1),
+    GPU_CHILD_PRESENT(OBJGPUMON, 1),
+    GPU_CHILD_PRESENT(OBJSWENG, 1),
+    GPU_CHILD_PRESENT(KernelBif, 1),
+    GPU_CHILD_PRESENT(KernelBus, 1),
+    GPU_CHILD_PRESENT(KernelCE, 3),
+    GPU_CHILD_PRESENT(KernelDisplay, 1),
+    GPU_CHILD_PRESENT(VirtMemAllocator, 1),
+    GPU_CHILD_PRESENT(KernelMemorySystem, 1),
+    GPU_CHILD_PRESENT(MemoryManager, 1),
+    GPU_CHILD_PRESENT(KernelFifo, 1),
+    GPU_CHILD_PRESENT(KernelGmmu, 1),
+    GPU_CHILD_PRESENT(KernelGraphics, 1),
+    GPU_CHILD_PRESENT(KernelMc, 1),
+    GPU_CHILD_PRESENT(SwIntr, 1),
+    GPU_CHILD_PRESENT(KernelPerf, 1),
+    GPU_CHILD_PRESENT(KernelPmu, 1),
 };
 
 const GPUCHILDPRESENT *
 gpuGetChildrenPresent_GM200(OBJGPU *pGpu, NvU32 *pNumEntries)
 {
-    *pNumEntries = NV_ARRAY_ELEMENTS32(gpuChildrenPresent_GM200);
+    *pNumEntries = NV_ARRAY_ELEMENTS(gpuChildrenPresent_GM200);
     return gpuChildrenPresent_GM200;
 }
 
+/*!
+ * @brief   checks for each type of bridge to deterimne what is available,
+ *          then selects the SLI bridge to use.
+ *
+ * @param[In]   gpuCount    The number of GPUs to be checked for SLI links.
+ * @param[In]   gpuMaskArg  A mask of the GPUs that are to be tested for SLI links.
+ * @param[Out]  pSliLinkOutputMask  a mask of the GPUs that are attached to the type of
+ *                  SLI link that is being used.
+ * @param[Out]  pSliLinkCircular    a boolean indicating if teh SLI link is circular.
+ * @param[Out]  pSliLinkEndsMask    a mask indicating the endpoints of the SLI link,
+ *                   if there are any.
+.*/
+void
+gpuDetectSliLinkFromGpus_GK104
+(
+    OBJGPU *pGpu,
+    NvU32   gpuCount,
+    NvU32   gpuMaskArg,
+    NvU32  *pSliLinkOutputMask,
+    NvBool *pSliLinkCircular,
+    NvU32  *pSliLinkEndsMask,
+    NvU32  *pVidLinkCount
+)
+{
+    NvU32       i;
+    NvU32       sliLinkOutputMask[SLI_MAX_BRIDGE_TYPES] = {0, 0};
+    NvBool      bSliLinkCircular[SLI_MAX_BRIDGE_TYPES]  = {NV_FALSE, NV_FALSE};
+    NvU32       sliLinkEndsMask[SLI_MAX_BRIDGE_TYPES]   = {0, 0};
+    NvU32       vidLinkCount[SLI_MAX_BRIDGE_TYPES]      = {0, 0};
+    OBJSYS     *pSys                                    = SYS_GET_INSTANCE();
+    OBJGPUMGR  *pGpuMgr                                 = SYS_GET_GPUMGR(pSys);
+    OBJGPU     *pGpuLoop;
+    OBJGPU     *pGpuSaved;
+    NvU32       gpuMask;
+    // Array to store the link detection HAL flag of GpuDetectVidLinkFromGpus_HAL and GpuDetectNvlinkLinkFromGpus_HAL.
+    NvU32       linkHalImpl[SLI_MAX_BRIDGE_TYPES];
+    NvBool      bFoundBridge = NV_FALSE;
+
+    // set the return values assuming we will not find an SLI link.
+    *pSliLinkOutputMask = 0;
+    *pSliLinkCircular   = NV_FALSE;
+    *pSliLinkEndsMask   = 0;
+
+    pGpuMgr->gpuBridgeType = SLI_BT_VIDLINK;
+
+    //
+    // Link detection HAL should have same HAL implementation as HAL flag.
+    // This checks for mismatched HAL implementation flag.
+    //
+    NV_ASSERT_OR_RETURN_VOID(gpuGetSliLinkDetectionHalFlag_HAL(pGpu) == GPU_LINK_DETECTION_HAL_GK104);
+
+    i = 0;
+    gpuMask = gpuMaskArg;
+    pGpuLoop = gpumgrGetNextGpu(gpuMask, &i);
+    if (pGpuLoop != NULL)
+    {
+        pGpuSaved = pGpuLoop;
+        linkHalImpl[SLI_BT_NVLINK]  = gpuGetNvlinkLinkDetectionHalFlag_HAL(pGpuLoop);
+
+    }
+    else
+    {
+         return;
+    }
+
+    // run thru the GPUs and see if they are all using the same HAL functions.
+    // if they are different, we can't use the function to check for a bridge
+    pGpuLoop = gpumgrGetNextGpu(gpuMask, &i);
+    while (NULL != pGpuLoop)
+    {
+        if (linkHalImpl[SLI_BT_NVLINK] != gpuGetNvlinkLinkDetectionHalFlag_HAL(pGpuLoop))
+        {
+            linkHalImpl[SLI_BT_NVLINK] = GPU_LINK_DETECTION_HAL_STUB;
+        }
+        pGpuLoop = gpumgrGetNextGpu(gpuMask, &i);
+    }
+
+    if (linkHalImpl[SLI_BT_NVLINK] != GPU_LINK_DETECTION_HAL_STUB)
+    {
+        gpuDetectNvlinkLinkFromGpus_HAL(pGpuSaved, gpuCount, gpuMaskArg,
+                                        &sliLinkOutputMask[SLI_BT_NVLINK],
+                                        &bSliLinkCircular[SLI_BT_NVLINK],
+                                        &sliLinkEndsMask[SLI_BT_NVLINK],
+                                        &vidLinkCount[SLI_BT_NVLINK]);
+    }
+
+    //
+    // Determine which type of bridge we are going to support.
+    // Currently we only support a single type of SLI bridge in the system.
+    //
+    for (i = 0; i < SLI_MAX_BRIDGE_TYPES; ++i)
+    {
+        if (sliLinkOutputMask[i] != 0)
+        {
+            if (bFoundBridge)
+            {
+                NV_PRINTF(LEVEL_ERROR, "More than one type of SLI bridge detected!\n");
+                NV_ASSERT(0);
+                break;
+            }
+            else
+            {
+                pGpuMgr->gpuBridgeType = (NvU8)i;
+                *pSliLinkOutputMask = sliLinkOutputMask[i];
+                *pSliLinkCircular = bSliLinkCircular[i];
+                *pSliLinkEndsMask = sliLinkEndsMask[i];
+                *pVidLinkCount = vidLinkCount[i];
+                bFoundBridge = NV_TRUE;
+            }
+        }
+    }
+}

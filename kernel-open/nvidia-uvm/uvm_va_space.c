@@ -1,5 +1,5 @@
 /*******************************************************************************
-    Copyright (c) 2015-2022 NVIDIA Corporation
+    Copyright (c) 2015-2023 NVIDIA Corporation
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to
@@ -160,14 +160,20 @@ static bool va_space_check_processors_masks(uvm_va_space_t *va_space)
     return true;
 }
 
-NV_STATUS uvm_va_space_create(struct inode *inode, struct file *filp)
+NV_STATUS uvm_va_space_create(struct address_space *mapping, uvm_va_space_t **va_space_ptr, NvU64 flags)
 {
     NV_STATUS status;
     uvm_va_space_t *va_space = uvm_kvmalloc_zero(sizeof(*va_space));
     uvm_gpu_id_t gpu_id;
 
+    *va_space_ptr = NULL;
     if (!va_space)
         return NV_ERR_NO_MEMORY;
+
+    if (flags & ~UVM_INIT_FLAGS_MASK) {
+        uvm_kvfree(va_space);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
 
     uvm_init_rwsem(&va_space->lock, UVM_LOCK_ORDER_VA_SPACE);
     uvm_mutex_init(&va_space->serialize_writers_lock, UVM_LOCK_ORDER_VA_SPACE_SERIALIZE_WRITERS);
@@ -176,29 +182,6 @@ NV_STATUS uvm_va_space_create(struct inode *inode, struct file *filp)
     uvm_spin_lock_init(&va_space->va_space_mm.lock, UVM_LOCK_ORDER_LEAF);
     uvm_range_tree_init(&va_space->va_range_tree);
     uvm_ats_init_va_space(va_space);
-
-    // By default all struct files on the same inode share the same
-    // address_space structure (the inode's) across all processes. This means
-    // unmap_mapping_range would unmap virtual mappings across all processes on
-    // that inode.
-    //
-    // Since the UVM driver uses the mapping offset as the VA of the file's
-    // process, we need to isolate the mappings to each process.
-    address_space_init_once(&va_space->mapping);
-    va_space->mapping.host = inode;
-
-    // Some paths in the kernel, for example force_page_cache_readahead which
-    // can be invoked from user-space via madvise MADV_WILLNEED and fadvise
-    // POSIX_FADV_WILLNEED, check the function pointers within
-    // file->f_mapping->a_ops for validity. However, those paths assume that a_ops
-    // itself is always valid. Handle that by using the inode's a_ops pointer,
-    // which is what f_mapping->a_ops would point to anyway if we weren't re-
-    // assigning f_mapping.
-    va_space->mapping.a_ops = inode->i_mapping->a_ops;
-
-#if defined(NV_ADDRESS_SPACE_HAS_BACKING_DEV_INFO)
-    va_space->mapping.backing_dev_info = inode->i_mapping->backing_dev_info;
-#endif
 
     // Init to 0 since we rely on atomic_inc_return behavior to return 1 as the first ID
     atomic64_set(&va_space->range_group_id_counter, 0);
@@ -231,13 +214,12 @@ NV_STATUS uvm_va_space_create(struct inode *inode, struct file *filp)
     init_waitqueue_head(&va_space->va_space_mm.last_retainer_wait_queue);
     init_waitqueue_head(&va_space->gpu_va_space_deferred_free.wait_queue);
 
-    filp->private_data = va_space;
-    filp->f_mapping = &va_space->mapping;
-
+    va_space->mapping = mapping;
     va_space->test.page_prefetch_enabled = true;
 
     init_tools_data(va_space);
 
+    uvm_down_write_mmap_lock(current->mm);
     uvm_va_space_down_write(va_space);
 
     status = uvm_perf_init_va_space_events(va_space, &va_space->perf_events);
@@ -254,11 +236,24 @@ NV_STATUS uvm_va_space_create(struct inode *inode, struct file *filp)
 
     UVM_ASSERT(va_space_check_processors_masks(va_space));
 
+    va_space->initialization_flags = flags;
+
+    status = uvm_va_space_mm_register(va_space);
+    if (status != NV_OK)
+        goto fail;
+
+    status = uvm_hmm_va_space_initialize(va_space);
+    if (status != NV_OK)
+        goto fail;
+
     uvm_va_space_up_write(va_space);
+    uvm_up_write_mmap_lock(current->mm);
 
     uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
     list_add_tail(&va_space->list_node, &g_uvm_global.va_spaces.list);
     uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
+
+    *va_space_ptr = va_space;
 
     return NV_OK;
 
@@ -266,6 +261,11 @@ fail:
     uvm_perf_heuristics_unload(va_space);
     uvm_perf_destroy_va_space_events(&va_space->perf_events);
     uvm_va_space_up_write(va_space);
+    uvm_up_write_mmap_lock(current->mm);
+
+    // See the comment in uvm_va_space_mm_unregister() for why this has to be
+    // called after releasing the locks.
+    uvm_va_space_mm_unregister(va_space);
 
     uvm_kvfree(va_space);
 
@@ -295,6 +295,8 @@ static void unregister_gpu(uvm_va_space_t *va_space,
 
     uvm_for_each_va_range(va_range, va_space)
         uvm_va_range_unregister_gpu(va_range, gpu, mm, deferred_free_list);
+
+    uvm_hmm_unregister_gpu(va_space, gpu, mm);
 
     // If this GPU has any peer-to-peer pair that was explicitly enabled, but
     // not explicitly disabled, disable it.
@@ -365,6 +367,11 @@ static void unregister_gpu(uvm_va_space_t *va_space,
         }
     }
 
+    if (va_space->gpu_unregister_dma_buffer[uvm_id_gpu_index(gpu->id)]) {
+        uvm_conf_computing_dma_buffer_free(&gpu->conf_computing.dma_buffer_pool,
+                                           va_space->gpu_unregister_dma_buffer[uvm_id_gpu_index(gpu->id)],
+                                           &va_space->gpu_unregister_dma_buffer[uvm_id_gpu_index(gpu->id)]->tracker);
+    }
     va_space_check_processors_masks(va_space);
 }
 
@@ -516,17 +523,15 @@ void uvm_va_space_destroy(uvm_va_space_t *va_space)
 
     uvm_deferred_free_object_list(&deferred_free_list);
 
-    // Remove the mm_struct association on this VA space, if any. This may
-    // invoke uvm_va_space_mm_shutdown(), which in turn will disable all
-    // channels and wait for any retainers to finish, so it has to be done
-    // outside of the VA space lock.
-    //
-    // Since we must already handle mm shutdown being called at any point prior
-    // to this call, this call can be made at any point in
-    // uvm_va_space_destroy(). It's beneficial to do it late after doing all
-    // deferred frees for GPU VA spaces and channels, because then
-    // uvm_va_space_mm_shutdown() will have minimal work to do.
-    uvm_va_space_mm_unregister(va_space);
+    // Normally we'd expect this to happen as part of uvm_mm_release()
+    // but if userspace never initialized uvm_mm_fd that won't happen.
+    // We don't have to take the va_space_mm spinlock and update state
+    // here because we know no other thread can be in or subsequently
+    // call uvm_api_mm_initialize successfully because the UVM
+    // file-descriptor has been released.
+    if (va_space->va_space_mm.state == UVM_VA_SPACE_MM_STATE_UNINITIALIZED)
+        uvm_va_space_mm_unregister(va_space);
+    UVM_ASSERT(!uvm_va_space_mm_alive(&va_space->va_space_mm));
 
     uvm_mutex_lock(&g_uvm_global.global_lock);
 
@@ -560,53 +565,8 @@ void uvm_va_space_destroy(uvm_va_space_t *va_space)
 
     uvm_mutex_unlock(&g_uvm_global.global_lock);
 
+    uvm_kvfree(va_space->mapping);
     uvm_kvfree(va_space);
-}
-
-NV_STATUS uvm_va_space_initialize(uvm_va_space_t *va_space, NvU64 flags)
-{
-    NV_STATUS status = NV_OK;
-
-    if (flags & ~UVM_INIT_FLAGS_MASK)
-        return NV_ERR_INVALID_ARGUMENT;
-
-    uvm_down_write_mmap_lock(current->mm);
-    uvm_va_space_down_write(va_space);
-
-    if (atomic_read(&va_space->initialized)) {
-        // Already initialized - check if parameters match
-        if (flags != va_space->initialization_flags)
-            status = NV_ERR_INVALID_ARGUMENT;
-    }
-    else {
-        va_space->initialization_flags = flags;
-
-        status = uvm_va_space_mm_register(va_space);
-        if (status != NV_OK)
-            goto out;
-
-        status = uvm_hmm_va_space_initialize(va_space);
-        if (status != NV_OK)
-            goto unreg;
-
-        // Use release semantics to match the acquire semantics in
-        // uvm_va_space_initialized. See that function for details. All
-        // initialization must be complete by this point.
-        atomic_set_release(&va_space->initialized, 1);
-    }
-
-out:
-    uvm_va_space_up_write(va_space);
-    uvm_up_write_mmap_lock(current->mm);
-    return status;
-
-unreg:
-    uvm_va_space_up_write(va_space);
-    uvm_up_write_mmap_lock(current->mm);
-    // See the comment in uvm_va_space_mm_unregister() for why this has to be
-    // called after releasing the locks.
-    uvm_va_space_mm_unregister(va_space);
-    return status;
 }
 
 void uvm_va_space_stop_all_user_channels(uvm_va_space_t *va_space)
@@ -700,6 +660,7 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
     uvm_va_range_t *va_range;
     uvm_gpu_t *gpu;
     uvm_gpu_t *other_gpu;
+    bool gpu_can_access_sysmem = true;
 
     status = uvm_gpu_retain_by_uuid(gpu_uuid, user_rm_device, &gpu);
     if (status != NV_OK)
@@ -727,12 +688,9 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
         goto done;
     }
 
-    // Mixing Volta and Pascal GPUs is not supported on P9 systems.
+    // Mixing coherent and non-coherent GPUs is not supported
     for_each_va_space_gpu(other_gpu, va_space) {
-        if ((gpu->parent->sysmem_link >= UVM_GPU_LINK_NVLINK_2 &&
-             other_gpu->parent->sysmem_link < UVM_GPU_LINK_NVLINK_2) ||
-            (gpu->parent->sysmem_link < UVM_GPU_LINK_NVLINK_2 &&
-             other_gpu->parent->sysmem_link >= UVM_GPU_LINK_NVLINK_2)) {
+        if (uvm_gpu_is_coherent(gpu->parent) != uvm_gpu_is_coherent(other_gpu->parent)) {
             status = NV_ERR_INVALID_DEVICE;
             goto done;
         }
@@ -742,6 +700,17 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
     if (va_space->disallow_new_registers) {
         status = NV_ERR_PAGE_TABLE_NOT_AVAIL;
         goto done;
+    }
+
+    if (uvm_conf_computing_mode_enabled(gpu)) {
+        NvU32 gpu_index = uvm_id_gpu_index(gpu->id);
+        status = uvm_conf_computing_dma_buffer_alloc(&gpu->conf_computing.dma_buffer_pool,
+                                                     &va_space->gpu_unregister_dma_buffer[gpu_index],
+                                                     NULL);
+        if (status != NV_OK)
+            goto done;
+
+        gpu_can_access_sysmem = false;
     }
 
     uvm_processor_mask_set(&va_space->registered_gpus, gpu->id);
@@ -757,15 +726,15 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
     processor_mask_array_set(va_space->has_native_atomics, gpu->id, gpu->id);
 
     // TODO: Bug 3252572: Support the new link type UVM_GPU_LINK_C2C
-    if (gpu->parent->sysmem_link >= UVM_GPU_LINK_NVLINK_1) {
+    if (gpu->parent->system_bus.link >= UVM_GPU_LINK_NVLINK_1) {
         processor_mask_array_set(va_space->has_nvlink, gpu->id, UVM_ID_CPU);
         processor_mask_array_set(va_space->has_nvlink, UVM_ID_CPU, gpu->id);
     }
 
-    if (gpu->parent->sysmem_link >= UVM_GPU_LINK_NVLINK_2) {
+    if (uvm_gpu_is_coherent(gpu->parent)) {
         processor_mask_array_set(va_space->has_native_atomics, gpu->id, UVM_ID_CPU);
 
-        if (gpu->parent->numa_info.enabled) {
+        if (gpu->mem_info.numa.enabled) {
             processor_mask_array_set(va_space->can_access, UVM_ID_CPU, gpu->id);
             processor_mask_array_set(va_space->accessible_from, gpu->id, UVM_ID_CPU);
             processor_mask_array_set(va_space->has_native_atomics, UVM_ID_CPU, gpu->id);
@@ -776,8 +745,7 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
     processor_mask_array_set(va_space->can_access, gpu->id, gpu->id);
     processor_mask_array_set(va_space->accessible_from, gpu->id, gpu->id);
 
-    // All GPUs have direct access to sysmem, unless we're in SEV mode
-    if (!g_uvm_global.sev_enabled) {
+    if (gpu_can_access_sysmem) {
         processor_mask_array_set(va_space->can_access, gpu->id, UVM_ID_CPU);
         processor_mask_array_set(va_space->accessible_from, UVM_ID_CPU, gpu->id);
     }
@@ -822,9 +790,9 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
             goto cleanup;
     }
 
-    if (gpu->parent->numa_info.enabled) {
+    if (gpu->mem_info.numa.enabled) {
         *numa_enabled = NV_TRUE;
-        *numa_node_id = (NvS32)uvm_gpu_numa_info(gpu)->node_id;
+        *numa_node_id = (NvS32)uvm_gpu_numa_node(gpu);
     }
     else {
         *numa_enabled = NV_FALSE;
@@ -1032,6 +1000,7 @@ static NV_STATUS enable_peers(uvm_va_space_t *va_space, uvm_gpu_t *gpu0, uvm_gpu
         return NV_ERR_NOT_COMPATIBLE;
     }
 
+    // TODO: Bug 3848497: Disable GPU Peer Mapping when HCC is enabled
     processor_mask_array_set(va_space->can_access, gpu0->id, gpu1->id);
     processor_mask_array_set(va_space->can_access, gpu1->id, gpu0->id);
     processor_mask_array_set(va_space->accessible_from, gpu0->id, gpu1->id);
@@ -1057,8 +1026,8 @@ static NV_STATUS enable_peers(uvm_va_space_t *va_space, uvm_gpu_t *gpu0, uvm_gpu
 
         if (peer_caps->is_indirect_peer) {
             UVM_ASSERT(peer_caps->link_type >= UVM_GPU_LINK_NVLINK_2);
-            UVM_ASSERT(gpu0->parent->numa_info.enabled);
-            UVM_ASSERT(gpu1->parent->numa_info.enabled);
+            UVM_ASSERT(gpu0->mem_info.numa.enabled);
+            UVM_ASSERT(gpu1->mem_info.numa.enabled);
 
             processor_mask_array_set(va_space->indirect_peers, gpu0->id, gpu1->id);
             processor_mask_array_set(va_space->indirect_peers, gpu1->id, gpu0->id);
@@ -1456,6 +1425,10 @@ NV_STATUS uvm_va_space_register_gpu_va_space(uvm_va_space_t *va_space,
         return NV_ERR_INVALID_DEVICE;
 
     mm = uvm_va_space_mm_or_current_retain(va_space);
+    if (!mm) {
+        status = NV_ERR_PAGE_TABLE_NOT_AVAIL;
+        goto error_gpu_release;
+    }
 
     status = create_gpu_va_space(gpu, va_space, user_rm_va_space, &gpu_va_space);
     if (status != NV_OK)
@@ -1558,6 +1531,8 @@ static void remove_gpu_va_space(uvm_gpu_va_space_t *gpu_va_space,
     uvm_for_each_va_range_safe(va_range, va_range_next, va_space)
         uvm_va_range_remove_gpu_va_space(va_range, gpu_va_space, mm, deferred_free_list);
 
+    uvm_hmm_remove_gpu_va_space(va_space, gpu_va_space, mm);
+
     uvm_deferred_free_object_add(deferred_free_list,
                                  &gpu_va_space->deferred_free,
                                  UVM_DEFERRED_FREE_OBJECT_GPU_VA_SPACE);
@@ -1567,6 +1542,7 @@ static void remove_gpu_va_space(uvm_gpu_va_space_t *gpu_va_space,
     atomic_inc(&va_space->gpu_va_space_deferred_free.num_pending);
 
     uvm_processor_mask_clear(&va_space->registered_gpu_va_spaces, gpu_va_space->gpu->id);
+    uvm_processor_mask_clear_atomic(&va_space->needs_fault_buffer_flush, gpu_va_space->gpu->id);
     va_space->gpu_va_spaces[uvm_id_gpu_index(gpu_va_space->gpu->id)] = NULL;
     gpu_va_space->state = UVM_GPU_VA_SPACE_STATE_DEAD;
 }
@@ -1840,8 +1816,6 @@ error:
 
 bool uvm_va_space_pageable_mem_access_supported(uvm_va_space_t *va_space)
 {
-    UVM_ASSERT(uvm_va_space_initialized(va_space) == NV_OK);
-
     // Any pageable memory access requires that we have mm_struct association
     // via va_space_mm.
     if (!uvm_va_space_mm_enabled(va_space))
@@ -2243,7 +2217,27 @@ static vm_fault_t uvm_va_space_cpu_fault(uvm_va_space_t *va_space,
         if (do_sleep)
             uvm_tools_record_throttling_end(va_space, fault_addr, UVM_ID_CPU);
 
-        if (!is_hmm) {
+        if (is_hmm) {
+            // Note that normally we should find a va_block for the faulting
+            // address because the block had to be created when migrating a
+            // page to the GPU and a device private PTE inserted into the CPU
+            // page tables in order for migrate_to_ram() to be called. Not
+            // finding it means the PTE was remapped to a different virtual
+            // address with mremap() so create a new va_block if needed.
+            status = uvm_hmm_va_block_find_create(va_space,
+                                                  fault_addr,
+                                                  &service_context->block_context,
+                                                  &va_block);
+            if (status != NV_OK)
+                break;
+
+            status = uvm_hmm_migrate_begin(va_block);
+            if (status != NV_OK)
+                break;
+
+            service_context->cpu_fault.vmf = vmf;
+        }
+        else {
             status = uvm_va_block_find_create_managed(va_space, fault_addr, &va_block);
             if (status != NV_OK) {
                 UVM_ASSERT_MSG(status == NV_ERR_NO_MEMORY, "status: %s\n", nvstatusToString(status));
@@ -2256,9 +2250,12 @@ static vm_fault_t uvm_va_space_cpu_fault(uvm_va_space_t *va_space,
 
         // Loop until thrashing goes away.
         status = uvm_va_block_cpu_fault(va_block, fault_addr, is_write, service_context);
+
+        if (is_hmm)
+            uvm_hmm_migrate_finish(va_block);
     } while (status == NV_WARN_MORE_PROCESSING_REQUIRED);
 
-    if (status != NV_OK) {
+    if (status != NV_OK && !(is_hmm && status == NV_ERR_BUSY_RETRY)) {
         UvmEventFatalReason reason;
 
         reason = uvm_tools_status_to_fatal_fault_reason(status);
@@ -2317,4 +2314,11 @@ vm_fault_t uvm_va_space_cpu_fault_managed(uvm_va_space_t *va_space,
     UVM_ASSERT(va_space == uvm_va_space_get(vma->vm_file));
 
     return uvm_va_space_cpu_fault(va_space, vma, vmf, false);
+}
+
+vm_fault_t uvm_va_space_cpu_fault_hmm(uvm_va_space_t *va_space,
+                                      struct vm_area_struct *vma,
+                                      struct vm_fault *vmf)
+{
+    return uvm_va_space_cpu_fault(va_space, vma, vmf, true);
 }

@@ -40,8 +40,6 @@
 
 #include <class/cl917c.h> // NV917C_BASE_CHANNEL_DMA
 #include <class/cl917b.h> // GK104DispOverlayImmControlPio
-#include <class/cl917c.h> // NV917C_SET_PRESENT_CONTROL_STEREO_FLIP_MODE
-#include <class/cl917d.h> // NV917D_HEAD_SET_HDMI_CTRL
 #include <class/cl917e.h> // NV917E_OVERLAY_CHANNEL_DMA
 #include <class/cl917cswspare.h> // NV917C_SET_SPARE_{PRE,POST}_UPDATE_TRAP
 
@@ -108,8 +106,6 @@ static void InitChannelCaps90(NVDevEvoPtr pDevEvo,
              * that it doesn't exceed 61 bits.
              */
             .validTimeStampBits = 61,
-            /* The size of the legacy overlay notifier format. */
-            .legacyNotifierFormatSizeBytes = NV_DISP_NOTIFICATION_2_SIZEOF,
             /* Overlay does not support tearing/immediate flips. */
             .tearingFlips = FALSE,
             .vrrTearingFlips = FALSE,
@@ -126,22 +122,15 @@ static void InitChannelCaps90(NVDevEvoPtr pDevEvo,
              * that it doesn't exceed 61 bits.
              */
             .validTimeStampBits = 61,
-            /* The size of the legacy base format. */
-            .legacyNotifierFormatSizeBytes = NV_DISP_BASE_NOTIFIER_1_SIZEOF,
             /* Base supports tearing/immediate flips. */
             .tearingFlips = TRUE,
-            /* Some 9x7c classes support VRR; may be overridden at runtime. */
-            .vrrTearingFlips = FALSE,
+            /* Base supports VRR tearing flips. */
+            .vrrTearingFlips = TRUE,
             /* Base supports per-eye stereo flips. */
             .perEyeStereoFlips = TRUE,
         };
 
         pChannel->caps = BaseCaps;
-
-        /* Base supports VRR tearing flips for class 917c and up. */
-        if (pChannel->hwclass >= NV917C_BASE_CHANNEL_DMA) {
-            pChannel->caps.vrrTearingFlips = TRUE;
-        }
     }
 }
 
@@ -339,6 +328,8 @@ static void EvoSetRasterParams90(NVDevEvoPtr pDevEvo, int head,
  */
 static void EvoSetRasterParams91(NVDevEvoPtr pDevEvo, int head,
                                  const NVHwModeTimingsEvo *pTimings,
+                                 const NvU8 tilePosition,
+                                 const NVDscInfoEvoRec *pDscInfo,
                                  const NVEvoColorRec *pOverscanColor,
                                  NVEvoUpdateState *updateState)
 {
@@ -346,6 +337,9 @@ static void EvoSetRasterParams91(NVDevEvoPtr pDevEvo, int head,
     NvU32 hdmiStereoCtrl =
         DRF_DEF(917D, _HEAD_SET_HDMI_CTRL, _STEREO3D_STRUCTURE, _FRAME_PACKED) |
         DRF_NUM(917D, _HEAD_SET_HDMI_CTRL, _HDMI_VIC, 0);
+
+    nvAssert(tilePosition == 0);
+    nvAssert(pDscInfo->type == NV_DSC_INFO_EVO_TYPE_DISABLED);
 
     EvoSetRasterParams90(pDevEvo, head,
                          pTimings,
@@ -707,6 +701,10 @@ static NvU32 EvoGetPixelDepth90(const enum nvKmsPixelDepth pixelDepth)
         return NV917D_HEAD_SET_CONTROL_OUTPUT_RESOURCE_PIXEL_DEPTH_BPP_24_444;
     case NVKMS_PIXEL_DEPTH_30_444:
         return NV917D_HEAD_SET_CONTROL_OUTPUT_RESOURCE_PIXEL_DEPTH_BPP_30_444;
+    case NVKMS_PIXEL_DEPTH_16_422:
+        return NV917D_HEAD_SET_CONTROL_OUTPUT_RESOURCE_PIXEL_DEPTH_BPP_16_422;
+    case NVKMS_PIXEL_DEPTH_20_422:
+        return NV917D_HEAD_SET_CONTROL_OUTPUT_RESOURCE_PIXEL_DEPTH_BPP_20_422;
     }
     nvAssert(!"Unexpected pixel depth");
     return NV917D_HEAD_SET_CONTROL_OUTPUT_RESOURCE_PIXEL_DEPTH_BPP_24_444;
@@ -715,10 +713,11 @@ static NvU32 EvoGetPixelDepth90(const enum nvKmsPixelDepth pixelDepth)
 static void EvoHeadSetControlOR90(NVDevEvoPtr pDevEvo,
                                   const int head,
                                   const NVHwModeTimingsEvo *pTimings,
+                                  const enum nvKmsPixelDepth pixelDepth,
                                   const NvBool colorSpaceOverride,
                                   NVEvoUpdateState *updateState)
 {
-    const NvU32 hwPixelDepth = EvoGetPixelDepth90(pTimings->pixelDepth);
+    const NvU32 hwPixelDepth = EvoGetPixelDepth90(pixelDepth);
     const NvU16 colorSpaceFlag = nvEvo1GetColorSpaceFlag(pDevEvo,
                                                          colorSpaceOverride);
     NVEvoChannelPtr pChannel = pDevEvo->core;
@@ -1376,16 +1375,12 @@ EvoPushSetCoreSurfaceMethodsForOneSd(NVDevEvoRec *pDevEvo,
     const NVFlipCursorEvoHwState *pSdCursorState = &pSdHeadState->cursor;
 
     const NVDispEvoRec *pDispEvo = pDevEvo->gpus[sd].pDispEvo;
-    const int dispIndex = pDispEvo->displayOwner;
-    NvU8 curLutIndex = pDevEvo->lut.head[head].disp[dispIndex].curLUTIndex;
+    const NVDispHeadStateEvoRec *pHeadState = &pDispEvo->headState[head];
 
-    NvBool  enableOutputLut =
-        pDevEvo->lut.head[head].disp[dispIndex].curOutputLutEnabled;
-    NvBool  enableBaseLut =
-        pDevEvo->lut.head[head].disp[dispIndex].curBaseLutEnabled;
+    NvBool  enableOutputLut = pHeadState->lut.outputLutEnabled;
+    NvBool  enableBaseLut = pHeadState->lut.baseLutEnabled;
 
-    NVLutSurfaceEvoPtr pCurLutSurfEvo =
-        pDevEvo->lut.head[head].LUT[curLutIndex];
+    NVLutSurfaceEvoPtr pCurLutSurfEvo = pHeadState->lut.pCurrSurface;
     NvU32 lutCtxdma = pCurLutSurfEvo != NULL ?
         pCurLutSurfEvo->dispCtxDma : 0x0;
 
@@ -1845,9 +1840,8 @@ needToReprogramCoreSurface(NVDevEvoPtr pDevEvo,
                            const NVSurfaceEvoRec *pNewSurfaceEvo)
 {
     const NVDispEvoRec *pDispEvo = pDevEvo->gpus[sd].pDispEvo;
-    const int dispIndex = pDispEvo->displayOwner;
-    NvBool  enableBaseLut =
-        pDevEvo->lut.head[head].disp[dispIndex].curBaseLutEnabled;
+    const NVDispHeadStateEvoRec *pHeadState = &pDispEvo->headState[head];
+    NvBool  enableBaseLut = pHeadState->lut.baseLutEnabled;
 
     const NVSurfaceEvoRec *pCurrCoreSurfaceEvo =
         pDevEvo->pSubDevices[sd]->pCoreChannelSurface[head];
@@ -2529,8 +2523,11 @@ static void EvoSetLUTContextDma90(const NVDispEvoRec *pDispEvo,
                REF_VAL(NV##cl##_CORE_NOTIFIER_##n##_CAPABILITIES_CAP_HEAD##i##_##x##_MAX_PIXELS##t##TAP444, \
                (pCaps)[NV##cl##_CORE_NOTIFIER_##n##_CAPABILITIES_CAP_HEAD##i##_##x]))
 
-#define NV_EVO2_CAP_GET_HEAD(cl, n, pEvoCaps, i, x, y, z, pCaps) \
+#define NV_EVO2_CAP_GET_HEAD(cl, n, pEvoCaps, i, x, y, z, a, pCaps) \
     (pEvoCaps)->head[(i)].usable = TRUE; \
+    (pEvoCaps)->head[(i)].maxPClkKHz = \
+        DRF_VAL(cl##_CORE_NOTIFIER_##n, _CAPABILITIES_CAP_HEAD##i##_##a, _PCLK_MAX, \
+                (pCaps)[NV##cl##_CORE_NOTIFIER_##n##_CAPABILITIES_CAP_HEAD##i##_##a]) * 10000; \
     (pEvoCaps)->head[(i)].scalerCaps.present = TRUE; \
     NV_EVO2_CAP_GET_HEAD_MAX_PIXELS(cl, n, pEvoCaps, i, x, 5, pCaps); \
     NV_EVO2_CAP_GET_HEAD_MAX_PIXELS(cl, n, pEvoCaps, i, y, 3, pCaps); \
@@ -2581,10 +2578,10 @@ static void EvoParseCapabilityNotifier3(NVEvoCapabilitiesPtr pEvoCaps,
     pEvoCaps->misc.supportsDSI = FALSE;
 
     // Heads
-    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 0, 53, 54, 55, pCaps);
-    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 1, 61, 62, 63, pCaps);
-    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 2, 69, 70, 71, pCaps);
-    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 3, 77, 78, 79, pCaps);
+    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 0, 53, 54, 55, 56, pCaps);
+    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 1, 61, 62, 63, 64, pCaps);
+    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 2, 69, 70, 71, 72, pCaps);
+    NV_EVO2_CAP_GET_HEAD(917D, 3, pEvoCaps, 3, 77, 78, 79, 80, pCaps);
 
     // SORs
     NV_EVO2_CAP_GET_SOR(917D, 3, pEvoCaps, 0, 20, 21, pCaps);
@@ -2613,8 +2610,15 @@ static NvBool EvoGetCapabilities90(NVDevEvoPtr pDevEvo)
     for (layer = 0;
          layer < ARRAY_LEN(pDevEvo->caps.layerCaps);
          layer++) {
-        pDevEvo->caps.layerCaps[layer].supportsWindowMode =
-            (layer != NVKMS_MAIN_LAYER);
+        if (layer != NVKMS_MAIN_LAYER) {
+            pDevEvo->caps.layerCaps[layer].supportsWindowMode = TRUE;
+            pDevEvo->caps.legacyNotifierFormatSizeBytes[layer] =
+                NV_DISP_NOTIFICATION_2_SIZEOF;
+        } else {
+            pDevEvo->caps.layerCaps[layer].supportsWindowMode = FALSE;
+            pDevEvo->caps.legacyNotifierFormatSizeBytes[layer] =
+               NV_DISP_BASE_NOTIFIER_1_SIZEOF;
+        }
     }
 
     pDevEvo->caps.cursorCompositionCaps =
@@ -3855,6 +3859,7 @@ NVEvoHAL nvEvo94 = {
     EvoClearSurfaceUsage91,                       /* ClearSurfaceUsage */
     EvoComputeWindowScalingTaps91,                /* ComputeWindowScalingTaps */
     NULL,                                         /* GetWindowScalingCaps */
+    NULL,                                         /* SetMergeMode */
     {                                             /* caps */
         FALSE,                                    /* supportsNonInterlockedUsageBoundsUpdate */
         FALSE,                                    /* supportsDisplayRate */
@@ -3872,6 +3877,7 @@ NVEvoHAL nvEvo94 = {
         FALSE,                                    /* supportsSynchronizedOverlayPositionUpdate */
         FALSE,                                    /* supportsVblankSyncObjects */
         TRUE,                                     /* requiresScalingTapsInBothDimensions */
+        FALSE,                                    /* supportsMergeMode */
         NV_EVO2_SUPPORTED_DITHERING_MODES,        /* supportedDitheringModes */
         sizeof(NV5070_CTRL_CMD_IS_MODE_POSSIBLE_PARAMS), /* impStructSize */
         NV_EVO_SCALER_1TAP,                       /* minScalerTaps */

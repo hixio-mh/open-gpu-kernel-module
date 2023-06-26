@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,10 +27,12 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl00f8.finn
+// Source file:      ctrl/ctrl00f8.finn
 //
 
 #include "ctrl/ctrlxxxx.h"
+#include "ctrl90f1.h"
+#include "mmu_fmt_types.h"
 
 #define NV00F8_CTRL_CMD(cat,idx)       NVXXXX_CTRL_CMD(0x00f8, NV00F8_CTRL_##cat, idx)
 
@@ -88,7 +90,7 @@ typedef struct NV_PHYSICAL_MEMORY_ATTRS {
 
 typedef struct NV00F8_CTRL_GET_INFO_PARAMS {
     NV_DECLARE_ALIGNED(NvU64 size, 8);
-    NvU32                    pageSize;
+    NV_DECLARE_ALIGNED(NvU64 pageSize, 8);
     NvU32                    allocFlags;
     NV_PHYSICAL_MEMORY_ATTRS physAttrs;
 } NV00F8_CTRL_GET_INFO_PARAMS;
@@ -127,18 +129,18 @@ typedef struct NV00F8_CTRL_DESCRIBE_PARAMS {
 } NV00F8_CTRL_DESCRIBE_PARAMS;
 
 /*
- *  hMemory [IN]
+ *  hMemory
  *    Physical memory handle to be attached.
  *
- *  offset [IN]
+ *  offset
  *    Offset into the fabric object.
  *    Must be physical memory pagesize aligned (at least).
  *
- *  mapOffSet [IN]
+ *  mapOffSet
  *    Offset into the physical memory descriptor.
  *    Must be physical memory pagesize aligned.
  *
- *  mapLength [IN]
+ *  mapLength
  *    Length of physical memory handle to be mapped.
  *    Must be physical memory pagesize aligned and less than or equal to
  *    fabric alloc size.
@@ -214,5 +216,101 @@ typedef struct NV00F8_CTRL_DETACH_MEM_PARAMS {
     NvU32 flags;
     NvU16 numDetached;
 } NV00F8_CTRL_DETACH_MEM_PARAMS;
+
+/*
+ * NV00F8_CTRL_CMD_GET_NUM_ATTACHED_MEM
+ *
+ * Returns number of attached physical memory info to the fabric object in
+ * a given offset range.
+ *
+ *  offsetStart [IN]
+ *    Offsets at which memory was attached.
+ *
+ *  offsetEnd [IN]
+ *    Offsets at which memory was attached.
+ *
+ *  numMemInfos [OUT]
+ *    Number of memory infos.
+ */
+#define NV00F8_CTRL_CMD_GET_NUM_ATTACHED_MEM (0xf80105) /* finn: Evaluated from "(FINN_NV_MEMORY_FABRIC_FABRIC_INTERFACE_ID << 8) | NV00F8_CTRL_GET_NUM_ATTACHED_MEM_PARAMS_MESSAGE_ID" */
+
+#define NV00F8_CTRL_GET_NUM_ATTACHED_MEM_PARAMS_MESSAGE_ID (0x5U)
+
+typedef struct NV00F8_CTRL_GET_NUM_ATTACHED_MEM_PARAMS {
+    NV_DECLARE_ALIGNED(NvU64 offsetStart, 8);
+    NV_DECLARE_ALIGNED(NvU64 offsetEnd, 8);
+    NvU16 numMemInfos;
+} NV00F8_CTRL_GET_NUM_ATTACHED_MEM_PARAMS;
+
+/*
+ * NV00F8_CTRL_CMD_GET_ATTACHED_MEM
+ *
+ * Queries attached physical memory info to the fabric object.
+ *
+ *  offsetStart [IN]
+ *    Offsets at which memory was attached.
+ *
+ *  numMemInfos [IN]
+ *    Number of memory infos to be filled.
+ *
+ *  memInfos [IN/OUT]
+ *    Attached memory infos.
+ *    Use must populate a non-zero `hMemory` handle. This handle will be used by
+ *    RM for duping physical memory.
+ */
+#define NV00F8_CTRL_CMD_GET_ATTACHED_MEM (0xf80106) /* finn: Evaluated from "(FINN_NV_MEMORY_FABRIC_FABRIC_INTERFACE_ID << 8) | NV00F8_CTRL_GET_ATTACHED_MEM_PARAMS_MESSAGE_ID" */
+
+#define NV00F8_MAX_ATTACHED_MEM_INFOS    64
+
+#define NV00F8_CTRL_GET_ATTACHED_MEM_PARAMS_MESSAGE_ID (0x6U)
+
+typedef struct NV00F8_CTRL_GET_ATTACHED_MEM_PARAMS {
+    NV_DECLARE_ALIGNED(NvU64 offsetStart, 8);
+    NvU16 numMemInfos;
+    NV_DECLARE_ALIGNED(NV00F8_CTRL_ATTACH_MEM_INFO memInfos[NV00F8_MAX_ATTACHED_MEM_INFOS], 8);
+} NV00F8_CTRL_GET_ATTACHED_MEM_PARAMS;
+
+/*
+ * NV00F8_CTRL_CMD_GET_PAGE_LEVEL_INFO
+ *
+ * Queries page table  information for a specific memory fabric address. This
+ * call is only supported for Verif platforms. This will return the same info
+ * as NV90F1_CTRL_VASPACE_GET_PAGE_LEVEL_INFO_PARAMS.
+ *
+ *  offset [IN]
+ *    Memory fabric Offset from the base address for which page table
+ *    information is queried. This offset should be aligned to physical page
+ *    size.
+ *
+ *  numLevels [OUT]
+ *    Number of levels populated.
+ *
+ *  levels [OUT]
+ *    Per-level information.
+ *
+ *  pFmt
+ *    Same as NV90F1_CTRL_VASPACE_GET_PAGE_LEVEL_INFO_PARAMS.
+ *
+ *  levelFmt
+ *    Same as NV90F1_CTRL_VASPACE_GET_PAGE_LEVEL_INFO_PARAMS.
+ * 
+ *  sublevelFmt
+ *    Same as NV90F1_CTRL_VASPACE_GET_PAGE_LEVEL_INFO_PARAMS.
+ *
+ *  aperture
+ *    Same as NV90F1_CTRL_VASPACE_GET_PAGE_LEVEL_INFO_PARAMS.
+ *
+ *  size
+ *    Same as NV90F1_CTRL_VASPACE_GET_PAGE_LEVEL_INFO_PARAMS.
+ */
+#define NV00F8_CTRL_CMD_GET_PAGE_LEVEL_INFO (0xf80107U) /* finn: Evaluated from "(FINN_NV_MEMORY_FABRIC_FABRIC_INTERFACE_ID << 8) | NV00F8_CTRL_GET_PAGE_LEVEL_INFO_PARAMS_MESSAGE_ID" */
+
+#define NV00F8_CTRL_GET_PAGE_LEVEL_INFO_PARAMS_MESSAGE_ID (0x7U)
+
+typedef struct NV00F8_CTRL_GET_PAGE_LEVEL_INFO_PARAMS {
+    NV_DECLARE_ALIGNED(NvU64 offset, 8);
+    NvU32 numLevels;
+    NV_DECLARE_ALIGNED(NV_CTRL_VASPACE_PAGE_LEVEL levels[GMMU_FMT_MAX_LEVELS], 8);
+} NV00F8_CTRL_GET_PAGE_LEVEL_INFO_PARAMS;
 
 /* _ctrl00f8_h_ */

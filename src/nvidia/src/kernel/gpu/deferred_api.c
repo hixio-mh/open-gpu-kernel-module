@@ -45,7 +45,6 @@ static NV_STATUS _Class5080DelDeferredApi(DeferredApiObject *pDeferredApiObject,
 
 static NV_STATUS _class5080DeferredApiV2(OBJGPU            *pGpu,
                                          ChannelDescendant *Object,
-                                         METHOD            *pMethod,
                                          NvU32              Offset,
                                          NvU32              Data);
 
@@ -469,7 +468,6 @@ _class5080DeferredApiV2
 (
     OBJGPU *pGpu,
     ChannelDescendant *Object,
-    METHOD *pMethod,
     NvU32 Offset,
     NvU32 Data
 )
@@ -479,7 +477,6 @@ _class5080DeferredApiV2
     NV5080_CTRL_DEFERRED_API_PARAMS *pDeferredApi;
     NV_STATUS            rmStatus           = NV_OK;
     NvU32                paramSize          = 0;
-    NvHandle             hDevice;
     NvBool               bIsCtrlCall        = NV_TRUE;
 
     rmStatus = _Class5080GetDeferredApiInfo(pDeferredApiObject,
@@ -510,28 +507,36 @@ _class5080DeferredApiV2
         {
             OBJGPU *pTgtGpu;
             RsClient *pClientVA;
+            Subdevice *pSubdevice;
 
             bIsCtrlCall = NV_FALSE;
 
-            rmStatus = serverGetClientUnderLock(&g_resServ, pDeferredApi->hClientVA, &pClientVA);
+            rmStatus = serverGetClientUnderLock(&g_resServ, pDeferredApi->hClientVA,
+                    &pClientVA);
             if (rmStatus != NV_OK)
                 break;
 
-            if (CliSetSubDeviceContext(
-                    pDeferredApi->hClientVA,
-                    pDeferredApi->hDeviceVA,
-                    &hDevice,
-                    &pTgtGpu) != NV_OK)
+            rmStatus = subdeviceGetByHandle(pClientVA, pDeferredApi->hDeviceVA,
+                    &pSubdevice);
+
+            if (rmStatus != NV_OK)
             {
                 NV_PRINTF(LEVEL_ERROR,
                           "Unable to find target gpu from hClient(%x), hDevice(%x)\n",
                           pDeferredApi->hClientVA, pDeferredApi->hDeviceVA);
-
-                rmStatus = NV_ERR_INVALID_ARGUMENT;
             }
             else
             {
+                NvHandle hDevice;
                 OBJVASPACE *pVAS = NULL;
+
+                // Fetch target GPU and set threadstate
+                pTgtGpu = GPU_RES_GET_GPU(pSubdevice);
+
+                hDevice = RES_GET_HANDLE(pSubdevice->pDevice);
+
+                GPU_RES_SET_THREAD_BC_STATE(pSubdevice);
+
                 rmStatus = vaspaceGetByHandleOrDeviceDefault(pClientVA,
                                                              hDevice,
                                                              pDeferredApi->api_bundle.InvalidateTlb.hVASpace,
@@ -702,7 +707,7 @@ cleanup:
     return rmStatus;
 }
 
-static METHOD Nv50DeferredApi[] =
+static const METHOD Nv50DeferredApi[] =
 {
     { mthdNoOperation,                  0x0100, 0x0103 },
     { _class5080DeferredApiV2,          0x0200, 0x0203 },
@@ -711,12 +716,12 @@ static METHOD Nv50DeferredApi[] =
 NV_STATUS defapiGetSwMethods_IMPL
 (
     DeferredApiObject  *pDeferredApi,
-    METHOD            **ppMethods,
+    const METHOD      **ppMethods,
     NvU32              *pNumMethods
 )
 {
     *ppMethods = Nv50DeferredApi;
-    *pNumMethods = NV_ARRAY_ELEMENTS32(Nv50DeferredApi);
+    *pNumMethods = NV_ARRAY_ELEMENTS(Nv50DeferredApi);
     return NV_OK;
 }
 

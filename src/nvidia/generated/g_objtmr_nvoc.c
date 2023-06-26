@@ -75,7 +75,7 @@ const struct NVOC_CLASS_DEF __nvoc_class_def_OBJTMR =
     /*pExportInfo=*/        &__nvoc_export_info_OBJTMR
 };
 
-static void __nvoc_thunk_OBJTMR_intrservRegisterIntrService(OBJGPU *pGpu, struct IntrService *pTmr, IntrServiceRecord pRecords[163]) {
+static void __nvoc_thunk_OBJTMR_intrservRegisterIntrService(OBJGPU *pGpu, struct IntrService *pTmr, IntrServiceRecord pRecords[167]) {
     tmrRegisterIntrService(pGpu, (struct OBJTMR *)(((unsigned char *)pTmr) - __nvoc_rtti_OBJTMR_IntrService.offset), pRecords);
 }
 
@@ -111,10 +111,6 @@ static void __nvoc_thunk_OBJTMR_engstateStateDestroy(OBJGPU *pGpu, struct OBJENG
     tmrStateDestroy(pGpu, (struct OBJTMR *)(((unsigned char *)pTmr) - __nvoc_rtti_OBJTMR_OBJENGSTATE.offset));
 }
 
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrReconcileTunableState(POBJGPU pGpu, struct OBJTMR *pEngstate, void *pTunableState) {
-    return engstateReconcileTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), pTunableState);
-}
-
 static NV_STATUS __nvoc_thunk_IntrService_tmrServiceNotificationInterrupt(OBJGPU *pGpu, struct OBJTMR *pIntrService, IntrServiceServiceNotificationInterruptArguments *pParams) {
     return intrservServiceNotificationInterrupt(pGpu, (struct IntrService *)(((unsigned char *)pIntrService) + __nvoc_rtti_OBJTMR_IntrService.offset), pParams);
 }
@@ -143,28 +139,8 @@ static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrStatePreInitUnlocked(POBJGPU pGpu, 
     return engstateStatePreInitUnlocked(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset));
 }
 
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrGetTunableState(POBJGPU pGpu, struct OBJTMR *pEngstate, void *pTunableState) {
-    return engstateGetTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), pTunableState);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrCompareTunableState(POBJGPU pGpu, struct OBJTMR *pEngstate, void *pTunables1, void *pTunables2) {
-    return engstateCompareTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), pTunables1, pTunables2);
-}
-
-static void __nvoc_thunk_OBJENGSTATE_tmrFreeTunableState(POBJGPU pGpu, struct OBJTMR *pEngstate, void *pTunableState) {
-    engstateFreeTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), pTunableState);
-}
-
 static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrStatePostLoad(POBJGPU pGpu, struct OBJTMR *pEngstate, NvU32 arg0) {
     return engstateStatePostLoad(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), arg0);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrAllocTunableState(POBJGPU pGpu, struct OBJTMR *pEngstate, void **ppTunableState) {
-    return engstateAllocTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), ppTunableState);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_tmrSetTunableState(POBJGPU pGpu, struct OBJTMR *pEngstate, void *pTunableState) {
-    return engstateSetTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_OBJTMR_OBJENGSTATE.offset), pTunableState);
 }
 
 static NvBool __nvoc_thunk_OBJENGSTATE_tmrIsPresent(POBJGPU pGpu, struct OBJTMR *pEngstate) {
@@ -271,10 +247,7 @@ static void __nvoc_init_funcTable_OBJTMR_1(OBJTMR *pThis, RmHalspecOwner *pRmhal
     pThis->__tmrClearInterrupt__ = &tmrClearInterrupt_IMPL;
 
     // Hal function -- tmrServiceInterrupt
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
-    {
-        pThis->__tmrServiceInterrupt__ = &tmrServiceInterrupt_56cd7a;
-    }
+    pThis->__tmrServiceInterrupt__ = &tmrServiceInterrupt_56cd7a;
 
     pThis->__tmrConstructEngine__ = &tmrConstructEngine_IMPL;
 
@@ -289,59 +262,53 @@ static void __nvoc_init_funcTable_OBJTMR_1(OBJTMR *pThis, RmHalspecOwner *pRmhal
     pThis->__tmrStateDestroy__ = &tmrStateDestroy_IMPL;
 
     // Hal function -- tmrSetCurrentTime
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
     {
-        if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-        {
-            pThis->__tmrSetCurrentTime__ = &tmrSetCurrentTime_GV100;
-        }
-        else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
-        {
-            pThis->__tmrSetCurrentTime__ = &tmrSetCurrentTime_GH100;
-        }
+        pThis->__tmrSetCurrentTime__ = &tmrSetCurrentTime_GH100;
+    }
+    else
+    {
+        pThis->__tmrSetCurrentTime__ = &tmrSetCurrentTime_GV100;
     }
 
     // Hal function -- tmrGetTimeEx
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
     {
-        if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-        {
-            pThis->__tmrGetTimeEx__ = &tmrGetTimeEx_GM107;
-        }
-        else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
-        {
-            pThis->__tmrGetTimeEx__ = &tmrGetTimeEx_GH100;
-        }
+        pThis->__tmrGetTimeEx__ = &tmrGetTimeEx_GH100;
+    }
+    else
+    {
+        pThis->__tmrGetTimeEx__ = &tmrGetTimeEx_GM107;
     }
 
     // Hal function -- tmrSetCountdownIntrDisable
-    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-    {
-        pThis->__tmrSetCountdownIntrDisable__ = &tmrSetCountdownIntrDisable_GM200;
-    }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
     {
         pThis->__tmrSetCountdownIntrDisable__ = &tmrSetCountdownIntrDisable_56cd7a;
     }
+    else
+    {
+        pThis->__tmrSetCountdownIntrDisable__ = &tmrSetCountdownIntrDisable_GM200;
+    }
 
     // Hal function -- tmrSetCountdown
-    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-    {
-        pThis->__tmrSetCountdown__ = &tmrSetCountdown_TU102;
-    }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
     {
         pThis->__tmrSetCountdown__ = &tmrSetCountdown_GH100;
     }
+    else
+    {
+        pThis->__tmrSetCountdown__ = &tmrSetCountdown_TU102;
+    }
 
     // Hal function -- tmrGrTickFreqChange
-    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-    {
-        pThis->__tmrGrTickFreqChange__ = &tmrGrTickFreqChange_GM107;
-    }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
     {
         pThis->__tmrGrTickFreqChange__ = &tmrGrTickFreqChange_46f6a7;
+    }
+    else
+    {
+        pThis->__tmrGrTickFreqChange__ = &tmrGrTickFreqChange_GM107;
     }
 
     // Hal function -- tmrGetGpuPtimerOffset
@@ -349,7 +316,7 @@ static void __nvoc_init_funcTable_OBJTMR_1(OBJTMR *pThis, RmHalspecOwner *pRmhal
     {
         pThis->__tmrGetGpuPtimerOffset__ = &tmrGetGpuPtimerOffset_TU102;
     }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x11f0fc00UL) )) /* ChipHal: GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 | GH100 */ 
+    else
     {
         pThis->__tmrGetGpuPtimerOffset__ = &tmrGetGpuPtimerOffset_GA100;
     }
@@ -372,8 +339,6 @@ static void __nvoc_init_funcTable_OBJTMR_1(OBJTMR *pThis, RmHalspecOwner *pRmhal
 
     pThis->__nvoc_base_OBJENGSTATE.__engstateStateDestroy__ = &__nvoc_thunk_OBJTMR_engstateStateDestroy;
 
-    pThis->__tmrReconcileTunableState__ = &__nvoc_thunk_OBJENGSTATE_tmrReconcileTunableState;
-
     pThis->__tmrServiceNotificationInterrupt__ = &__nvoc_thunk_IntrService_tmrServiceNotificationInterrupt;
 
     pThis->__tmrStatePreLoad__ = &__nvoc_thunk_OBJENGSTATE_tmrStatePreLoad;
@@ -388,17 +353,7 @@ static void __nvoc_init_funcTable_OBJTMR_1(OBJTMR *pThis, RmHalspecOwner *pRmhal
 
     pThis->__tmrStatePreInitUnlocked__ = &__nvoc_thunk_OBJENGSTATE_tmrStatePreInitUnlocked;
 
-    pThis->__tmrGetTunableState__ = &__nvoc_thunk_OBJENGSTATE_tmrGetTunableState;
-
-    pThis->__tmrCompareTunableState__ = &__nvoc_thunk_OBJENGSTATE_tmrCompareTunableState;
-
-    pThis->__tmrFreeTunableState__ = &__nvoc_thunk_OBJENGSTATE_tmrFreeTunableState;
-
     pThis->__tmrStatePostLoad__ = &__nvoc_thunk_OBJENGSTATE_tmrStatePostLoad;
-
-    pThis->__tmrAllocTunableState__ = &__nvoc_thunk_OBJENGSTATE_tmrAllocTunableState;
-
-    pThis->__tmrSetTunableState__ = &__nvoc_thunk_OBJENGSTATE_tmrSetTunableState;
 
     pThis->__tmrIsPresent__ = &__nvoc_thunk_OBJENGSTATE_tmrIsPresent;
 }
@@ -425,12 +380,15 @@ NV_STATUS __nvoc_objCreate_OBJTMR(OBJTMR **ppThis, Dynamic *pParent, NvU32 creat
     OBJTMR *pThis;
     RmHalspecOwner *pRmhalspecowner;
 
-    pThis = portMemAllocNonPaged(sizeof(OBJTMR));
-    if (pThis == NULL) return NV_ERR_NO_MEMORY;
+    status = __nvoc_handleObjCreateMemAlloc(createFlags, sizeof(OBJTMR), (void**)&pThis, (void**)ppThis);
+    if (status != NV_OK)
+        return status;
 
     portMemSet(pThis, 0, sizeof(OBJTMR));
 
     __nvoc_initRtti(staticCast(pThis, Dynamic), &__nvoc_class_def_OBJTMR);
+
+    pThis->__nvoc_base_OBJENGSTATE.__nvoc_base_Object.createFlags = createFlags;
 
     if (pParent != NULL && !(createFlags & NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY))
     {
@@ -451,11 +409,17 @@ NV_STATUS __nvoc_objCreate_OBJTMR(OBJTMR **ppThis, Dynamic *pParent, NvU32 creat
     if (status != NV_OK) goto __nvoc_objCreate_OBJTMR_cleanup;
 
     *ppThis = pThis;
+
     return NV_OK;
 
 __nvoc_objCreate_OBJTMR_cleanup:
     // do not call destructors here since the constructor already called them
-    portMemFree(pThis);
+    if (createFlags & NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT)
+        portMemSet(pThis, 0, sizeof(OBJTMR));
+    else
+        portMemFree(pThis);
+
+    // coverity[leaked_storage:FALSE]
     return status;
 }
 

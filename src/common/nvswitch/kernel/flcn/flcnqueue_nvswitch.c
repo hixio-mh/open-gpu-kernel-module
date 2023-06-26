@@ -1168,8 +1168,17 @@ _flcnQueueResponseHandle_IMPL
     NV_STATUS           status     = NV_OK;
     RM_FLCN_MSG_GEN    *pMsgGen    = (RM_FLCN_MSG_GEN *)pMsg;
     PFALCON_QUEUE_INFO  pQueueInfo = pFlcn->pQueueInfo;
+    NvU32               msgSize;
 
     NVSWITCH_ASSERT(pQueueInfo != NULL);
+
+    if (pMsgGen == NULL)
+    {
+        NVSWITCH_PRINT(device, ERROR,
+            "%s: NULL message\n",
+            __FUNCTION__);
+        return NV_ERR_GENERIC;
+    }
 
     // get the sequence info data associated with this message
     pSeqInfo = flcnableQueueSeqInfoGet(device, pFlcn->pFlcnable, pMsgGen->hdr.seqNumId);
@@ -1184,6 +1193,14 @@ _flcnQueueResponseHandle_IMPL
             "%s: message received for an unknown sequence number = %d\n",
             __FUNCTION__, pMsgGen->hdr.seqNumId);
         return NV_ERR_GENERIC;
+    }
+
+    // If response was requested
+    if (pSeqInfo->pMsgResp != NULL)
+    {
+        NVSWITCH_ASSERT(pSeqInfo->pMsgResp->hdr.size == pMsgGen->hdr.size);
+        msgSize = pMsgGen->hdr.size - RM_FLCN_QUEUE_HDR_SIZE;
+        nvswitch_os_memcpy(&pSeqInfo->pMsgResp->msg, &pMsgGen->msg, msgSize);
     }
 
     //
@@ -1472,6 +1489,7 @@ _flcnQueueCmdPostNonBlocking_IMPL
     //
     pSeqInfo->pCallback       = pCallback;
     pSeqInfo->pCallbackParams = pCallbackParams;
+    pSeqInfo->pMsgResp        = (RM_FLCN_MSG_GEN *)pMsg;
     pSeqInfo->seqDesc         = pQueueInfo->nextSeqDesc++;
 
     // Set the sequence descriptor return value.

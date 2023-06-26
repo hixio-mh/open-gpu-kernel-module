@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,11 +27,12 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl0080/ctrl0080internal.finn
+// Source file:      ctrl/ctrl0080/ctrl0080internal.finn
 //
 
 #include "nvlimits.h"
 #include "ctrl0080gr.h"
+#include "ctrl0080fifo.h"
 #include "ctrl/ctrl0080/ctrl0080base.h"
 #include "ctrl/ctrl0080/ctrl0080perf.h"
 
@@ -91,7 +92,7 @@ typedef struct NV0080_CTRL_CMD_INTERNAL_GR_SET_TPC_PARTITION_MODE_FINN_PARAMS {
 /*!
  * @ref NV0080_CTRL_CMD_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT
  */
-#define NV0080_CTRL_CMD_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT     (0x802006) /* finn: Evaluated from "(FINN_NV01_DEVICE_0_INTERNAL_INTERFACE_ID << 8) | NV0080_CTRL_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT_PARAMS_MESSAGE_ID" */
+#define NV0080_CTRL_CMD_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT (0x802006) /* finn: Evaluated from "(FINN_NV01_DEVICE_0_INTERNAL_INTERFACE_ID << 8) | NV0080_CTRL_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT_PARAMS_MESSAGE_ID" */
 
 #define NV0080_CTRL_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT_PARAMS_MESSAGE_ID (0x6U)
 
@@ -99,5 +100,31 @@ typedef struct NV0080_CTRL_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT_PARAMS {
     NvU8 powerDisconnectedGpuBus[NV_MAX_DEVICES];
     NvU8 powerDisconnectedGpuCount;
 } NV0080_CTRL_INTERNAL_PERF_GET_UNDERPOWERED_GPU_COUNT_PARAMS;
+
+/*
+ * NV0080_CTRL_CMD_INTERNAL_FIFO_RC_AND_PERMANENTLY_DISABLE_CHANNELS
+ *
+ * This command will RC and disable channels permanently for the given clients.
+ *
+ *  numClients
+ *      Number of clients
+ *  clientHandles
+ *      List of client handles
+ *
+ * Possible status values returned are:
+ *    NV_OK
+ *    NV_ERR_INVALID_STATE
+ */
+
+#define NV0080_CTRL_CMD_INTERNAL_FIFO_RC_AND_PERMANENTLY_DISABLE_CHANNELS (0x802008) /* finn: Evaluated from "(FINN_NV01_DEVICE_0_INTERNAL_INTERFACE_ID << 8) | NV0080_CTRL_INTERNAL_FIFO_RC_AND_PERMANENTLY_DISABLE_CHANNELS_PARAMS_MESSAGE_ID" */
+
+#define NV_FIFO_PERMANENTLY_DISABLE_CHANNELS_MAX_CLIENTS                  200U
+
+#define NV0080_CTRL_INTERNAL_FIFO_RC_AND_PERMANENTLY_DISABLE_CHANNELS_PARAMS_MESSAGE_ID (0x08U)
+
+typedef struct NV0080_CTRL_INTERNAL_FIFO_RC_AND_PERMANENTLY_DISABLE_CHANNELS_PARAMS {
+    NvU32    numClients;
+    NvHandle clientHandles[NV_FIFO_PERMANENTLY_DISABLE_CHANNELS_MAX_CLIENTS];
+} NV0080_CTRL_INTERNAL_FIFO_RC_AND_PERMANENTLY_DISABLE_CHANNELS_PARAMS;
 
 /* ctrl0080internal_h */

@@ -125,12 +125,21 @@ static NV_INLINE void nvswitch_clear_flags(NvU32 *val, NvU32 flags)
 // This macro should be used to check assertion statements and print Error messages.
 //
 #if defined(DEVELOP) || defined(DEBUG) || defined(NV_MODS)
+void nvswitch_assert_log
+(
+    const char *function,
+    const char *file,
+    NvU32 line
+);
+
 #define NVSWITCH_ASSERT(_cond)                                                       \
-    nvswitch_os_assert_log((_cond), "NVSwitch: Assertion failed in %s() at %s:%d\n", \
-         __FUNCTION__ , __FILE__, __LINE__)
+    ((void)((!(_cond)) ? nvswitch_assert_log(__FUNCTION__, __FILE__, __LINE__) : 0))
+
 #else
+void nvswitch_assert_log(void);
+
 #define NVSWITCH_ASSERT(_cond)                                       \
-    nvswitch_os_assert_log((_cond), "NVSwitch: Assertion failed \n")
+    ((void)((!(_cond)) ? nvswitch_assert_log() : 0))
 #endif
 
 #define NVSWITCH_ASSERT_ERROR_INFO(errorCategory, errorInfo) NVSWITCH_ASSERT(0x0)
@@ -460,7 +469,8 @@ nvswitch_record_error
     NvBool  error_resolved,
     void    *data,
     NvU32   data_size,
-    NvU32   line
+    NvU32   line,
+    const char *description
 );
 
 void
@@ -570,5 +580,6 @@ NvlStatus nvswitch_set_training_mode(nvswitch_device *device);
 NvBool    nvswitch_is_link_in_reset(nvswitch_device *device, nvlink_link *link);
 void      nvswitch_apply_recal_settings(nvswitch_device *device, nvlink_link *link);
 void nvswitch_init_buffer_ready(nvswitch_device *device, nvlink_link *link, NvBool bNportBufferReady);
-
+NvBool    nvswitch_does_link_need_termination_enabled(nvswitch_device *device, nvlink_link *link);
+NvlStatus nvswitch_link_termination_setup(nvswitch_device *device, nvlink_link* link);
 #endif //_COMMON_NVSWITCH_H_

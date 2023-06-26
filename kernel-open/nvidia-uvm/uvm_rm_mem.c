@@ -102,12 +102,21 @@ NvU64 uvm_rm_mem_get_gpu_proxy_va(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu)
     return rm_mem->proxy_vas[uvm_global_id_value(gpu->global_id)];
 }
 
-NvU64 uvm_rm_mem_get_gpu_va(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu, bool is_proxy_va_space)
+uvm_gpu_address_t uvm_rm_mem_get_gpu_va(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu, bool is_proxy_va_space)
 {
+    uvm_gpu_address_t gpu_va = {0};
+
+    gpu_va.aperture = UVM_APERTURE_MAX;
+    gpu_va.is_virtual = true;
+    if (uvm_conf_computing_mode_enabled(gpu) && (rm_mem->type == UVM_RM_MEM_TYPE_SYS))
+        gpu_va.is_unprotected = true;
+
     if (is_proxy_va_space)
-        return uvm_rm_mem_get_gpu_proxy_va(rm_mem, gpu);
+        gpu_va.address = uvm_rm_mem_get_gpu_proxy_va(rm_mem, gpu);
     else
-        return uvm_rm_mem_get_gpu_uvm_va(rm_mem, gpu);
+        gpu_va.address = uvm_rm_mem_get_gpu_uvm_va(rm_mem, gpu);
+
+    return gpu_va;
 }
 
 void *uvm_rm_mem_get_cpu_va(uvm_rm_mem_t *rm_mem)
@@ -199,6 +208,9 @@ NV_STATUS uvm_rm_mem_alloc(uvm_gpu_t *gpu,
     if (rm_mem == NULL)
         return NV_ERR_NO_MEMORY;
 
+    if (!uvm_conf_computing_mode_enabled(gpu) || type == UVM_RM_MEM_TYPE_SYS)
+        alloc_info.bUnprotected = NV_TRUE;
+
     alloc_info.alignment = gpu_alignment;
 
     if (type == UVM_RM_MEM_TYPE_SYS)
@@ -245,6 +257,8 @@ NV_STATUS uvm_rm_mem_map_cpu(uvm_rm_mem_t *rm_mem)
 
     gpu = rm_mem->gpu_owner;
     gpu_va = uvm_rm_mem_get_gpu_uvm_va(rm_mem, gpu);
+    if (uvm_conf_computing_mode_enabled(gpu))
+        UVM_ASSERT(rm_mem->type == UVM_RM_MEM_TYPE_SYS);
 
     status = uvm_rm_locked_call(nvUvmInterfaceMemoryCpuMap(gpu->rm_address_space,
                                                            gpu_va,
@@ -284,11 +298,11 @@ NV_STATUS uvm_rm_mem_map_gpu(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu, NvU64 gpu_ali
     UVM_ASSERT(rm_mem);
     UVM_ASSERT(gpu);
 
-    // Peer mappings not supported yet
-    UVM_ASSERT(rm_mem->type == UVM_RM_MEM_TYPE_SYS);
-
     if (uvm_rm_mem_mapped_on_gpu(rm_mem, gpu))
         return NV_OK;
+
+    // Peer mappings are not supported yet
+    UVM_ASSERT(rm_mem->type == UVM_RM_MEM_TYPE_SYS);
 
     gpu_owner = rm_mem->gpu_owner;
     gpu_owner_va = uvm_rm_mem_get_gpu_uvm_va(rm_mem, gpu_owner);
@@ -334,8 +348,9 @@ void uvm_rm_mem_unmap_gpu(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu)
     UVM_ASSERT(rm_mem);
     UVM_ASSERT(gpu);
 
-    // Cannot unmap from the gpu that owns the allocation.
-    UVM_ASSERT_MSG(rm_mem->gpu_owner != gpu, "GPU %s\n", uvm_gpu_name(gpu));
+    // The GPU owner mapping remains valid until the memory is freed.
+    if (gpu == rm_mem->gpu_owner)
+        return;
 
     rm_mem_unmap_gpu(rm_mem, gpu);
 }

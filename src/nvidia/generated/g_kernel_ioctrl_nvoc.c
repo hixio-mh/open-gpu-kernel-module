@@ -70,10 +70,6 @@ static NV_STATUS __nvoc_thunk_KernelIoctrl_engstateConstructEngine(struct OBJGPU
     return kioctrlConstructEngine(arg0, (struct KernelIoctrl *)(((unsigned char *)arg1) - __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), arg2);
 }
 
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlReconcileTunableState(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    return engstateReconcileTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), pTunableState);
-}
-
 static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlStateLoad(POBJGPU pGpu, struct KernelIoctrl *pEngstate, NvU32 arg0) {
     return engstateStateLoad(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), arg0);
 }
@@ -118,28 +114,8 @@ static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlStatePreInitUnlocked(POBJGPU pG
     return engstateStatePreInitUnlocked(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset));
 }
 
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlGetTunableState(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    return engstateGetTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), pTunableState);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlCompareTunableState(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunables1, void *pTunables2) {
-    return engstateCompareTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), pTunables1, pTunables2);
-}
-
-static void __nvoc_thunk_OBJENGSTATE_kioctrlFreeTunableState(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    engstateFreeTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), pTunableState);
-}
-
 static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlStatePostLoad(POBJGPU pGpu, struct KernelIoctrl *pEngstate, NvU32 arg0) {
     return engstateStatePostLoad(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), arg0);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlAllocTunableState(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void **ppTunableState) {
-    return engstateAllocTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), ppTunableState);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kioctrlSetTunableState(POBJGPU pGpu, struct KernelIoctrl *pEngstate, void *pTunableState) {
-    return engstateSetTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelIoctrl_OBJENGSTATE.offset), pTunableState);
 }
 
 static NvBool __nvoc_thunk_OBJENGSTATE_kioctrlIsPresent(POBJGPU pGpu, struct KernelIoctrl *pEngstate) {
@@ -217,34 +193,26 @@ static void __nvoc_init_funcTable_KernelIoctrl_1(KernelIoctrl *pThis, RmHalspecO
     pThis->__kioctrlConstructEngine__ = &kioctrlConstructEngine_IMPL;
 
     // Hal function -- kioctrlGetMinionEnableDefault
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x00000380UL) )) /* ChipHal: TU106 | TU116 | TU117 */ 
     {
-        if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x11f0fc60UL) )) /* ChipHal: TU102 | TU104 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 | GH100 */ 
-        {
-            pThis->__kioctrlGetMinionEnableDefault__ = &kioctrlGetMinionEnableDefault_GV100;
-        }
-        else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x00000380UL) )) /* ChipHal: TU106 | TU116 | TU117 */ 
-        {
-            pThis->__kioctrlGetMinionEnableDefault__ = &kioctrlGetMinionEnableDefault_bf6dfa;
-        }
+        pThis->__kioctrlGetMinionEnableDefault__ = &kioctrlGetMinionEnableDefault_bf6dfa;
+    }
+    else
+    {
+        pThis->__kioctrlGetMinionEnableDefault__ = &kioctrlGetMinionEnableDefault_GV100;
     }
 
     // Hal function -- kioctrlMinionConstruct
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x00000380UL) )) /* ChipHal: TU106 | TU116 | TU117 */ 
     {
-        if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x11f0fc60UL) )) /* ChipHal: TU102 | TU104 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 | GH100 */ 
-        {
-            pThis->__kioctrlMinionConstruct__ = &kioctrlMinionConstruct_GV100;
-        }
-        else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x00000380UL) )) /* ChipHal: TU106 | TU116 | TU117 */ 
-        {
-            pThis->__kioctrlMinionConstruct__ = &kioctrlMinionConstruct_ac1694;
-        }
+        pThis->__kioctrlMinionConstruct__ = &kioctrlMinionConstruct_ac1694;
+    }
+    else
+    {
+        pThis->__kioctrlMinionConstruct__ = &kioctrlMinionConstruct_GV100;
     }
 
     pThis->__nvoc_base_OBJENGSTATE.__engstateConstructEngine__ = &__nvoc_thunk_KernelIoctrl_engstateConstructEngine;
-
-    pThis->__kioctrlReconcileTunableState__ = &__nvoc_thunk_OBJENGSTATE_kioctrlReconcileTunableState;
 
     pThis->__kioctrlStateLoad__ = &__nvoc_thunk_OBJENGSTATE_kioctrlStateLoad;
 
@@ -268,17 +236,7 @@ static void __nvoc_init_funcTable_KernelIoctrl_1(KernelIoctrl *pThis, RmHalspecO
 
     pThis->__kioctrlStatePreInitUnlocked__ = &__nvoc_thunk_OBJENGSTATE_kioctrlStatePreInitUnlocked;
 
-    pThis->__kioctrlGetTunableState__ = &__nvoc_thunk_OBJENGSTATE_kioctrlGetTunableState;
-
-    pThis->__kioctrlCompareTunableState__ = &__nvoc_thunk_OBJENGSTATE_kioctrlCompareTunableState;
-
-    pThis->__kioctrlFreeTunableState__ = &__nvoc_thunk_OBJENGSTATE_kioctrlFreeTunableState;
-
     pThis->__kioctrlStatePostLoad__ = &__nvoc_thunk_OBJENGSTATE_kioctrlStatePostLoad;
-
-    pThis->__kioctrlAllocTunableState__ = &__nvoc_thunk_OBJENGSTATE_kioctrlAllocTunableState;
-
-    pThis->__kioctrlSetTunableState__ = &__nvoc_thunk_OBJENGSTATE_kioctrlSetTunableState;
 
     pThis->__kioctrlIsPresent__ = &__nvoc_thunk_OBJENGSTATE_kioctrlIsPresent;
 }
@@ -302,12 +260,15 @@ NV_STATUS __nvoc_objCreate_KernelIoctrl(KernelIoctrl **ppThis, Dynamic *pParent,
     KernelIoctrl *pThis;
     RmHalspecOwner *pRmhalspecowner;
 
-    pThis = portMemAllocNonPaged(sizeof(KernelIoctrl));
-    if (pThis == NULL) return NV_ERR_NO_MEMORY;
+    status = __nvoc_handleObjCreateMemAlloc(createFlags, sizeof(KernelIoctrl), (void**)&pThis, (void**)ppThis);
+    if (status != NV_OK)
+        return status;
 
     portMemSet(pThis, 0, sizeof(KernelIoctrl));
 
     __nvoc_initRtti(staticCast(pThis, Dynamic), &__nvoc_class_def_KernelIoctrl);
+
+    pThis->__nvoc_base_OBJENGSTATE.__nvoc_base_Object.createFlags = createFlags;
 
     if (pParent != NULL && !(createFlags & NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY))
     {
@@ -328,11 +289,17 @@ NV_STATUS __nvoc_objCreate_KernelIoctrl(KernelIoctrl **ppThis, Dynamic *pParent,
     if (status != NV_OK) goto __nvoc_objCreate_KernelIoctrl_cleanup;
 
     *ppThis = pThis;
+
     return NV_OK;
 
 __nvoc_objCreate_KernelIoctrl_cleanup:
     // do not call destructors here since the constructor already called them
-    portMemFree(pThis);
+    if (createFlags & NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT)
+        portMemSet(pThis, 0, sizeof(KernelIoctrl));
+    else
+        portMemFree(pThis);
+
+    // coverity[leaked_storage:FALSE]
     return status;
 }
 

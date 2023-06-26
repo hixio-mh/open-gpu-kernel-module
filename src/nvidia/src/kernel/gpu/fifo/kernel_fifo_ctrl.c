@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -44,11 +44,7 @@
 static NV_STATUS _kfifoGetCaps(OBJGPU *pGpu, NvU8 *pKfifoCaps);
 
 /*!
- *
  * @brief deviceCtrlCmdFifoGetChannelList
- *
- * Lock Requirements:
- *      Assert that API lock and GPUs lock held on entry
  */
 NV_STATUS
 deviceCtrlCmdFifoGetChannelList_IMPL
@@ -61,8 +57,6 @@ deviceCtrlCmdFifoGetChannelList_IMPL
     NvU32   *pChannelHandleList = NvP64_VALUE(pChannelParams->pChannelHandleList);
     NvU32   *pChannelList       = NvP64_VALUE(pChannelParams->pChannelList);
     NvU32    counter;
-
-    LOCK_ASSERT_AND_RETURN(rmapiLockIsOwner() && rmGpuLockIsOwner());
 
     // Validate input / Size / Args / Copy args
     if (pChannelParams->numChannels == 0)
@@ -79,7 +73,8 @@ deviceCtrlCmdFifoGetChannelList_IMPL
         NV_STATUS status;
 
         // Searching through the rm client db.
-        status = CliGetKernelChannel(RES_GET_CLIENT_HANDLE(pDevice), pChannelHandleList[counter], &pKernelChannel);
+        status = CliGetKernelChannel(RES_GET_CLIENT(pDevice),
+            pChannelHandleList[counter], &pKernelChannel);
 
         if (status == NV_OK)
         {
@@ -370,8 +365,6 @@ subdeviceCtrlCmdFifoGetUserdLocation_IMPL
     NV2080_CTRL_CMD_FIFO_GET_USERD_LOCATION_PARAMS *pUserdLocationParams
 )
 {
-    RsClient  *pClient = RES_GET_CLIENT(pSubdevice);
-    Device    *pDevice;
     NvU32      userdAperture;
     NvU32      userdAttribute;
     NV_STATUS  rmStatus = NV_OK;
@@ -379,10 +372,6 @@ subdeviceCtrlCmdFifoGetUserdLocation_IMPL
     KernelFifo *pKernelFifo = GPU_GET_KERNEL_FIFO(pGpu);
 
     LOCK_ASSERT_AND_RETURN(rmapiLockIsOwner() && rmGpuLockIsOwner());
-
-    rmStatus = deviceGetByGpu(pClient, pGpu, NV_TRUE, &pDevice);
-    if (rmStatus != NV_OK)
-        return NV_ERR_INVALID_DEVICE;
 
     rmStatus = kfifoGetUserdLocation_HAL(pKernelFifo,
                                          &userdAperture,
@@ -444,7 +433,7 @@ subdeviceCtrlCmdFifoGetChannelMemInfo_IMPL
 )
 {
     OBJGPU    *pGpu     = GPU_RES_GET_GPU(pSubdevice);
-    Device    *pDevice;
+    NvHandle   hDevice  = RES_GET_PARENT_HANDLE(pSubdevice);
     RsClient  *pClient  = RES_GET_CLIENT(pSubdevice);
     NV_STATUS  rmStatus = NV_OK;
     NvU32      index;
@@ -456,12 +445,8 @@ subdeviceCtrlCmdFifoGetChannelMemInfo_IMPL
 
     LOCK_ASSERT_AND_RETURN(rmapiLockIsOwner() && rmGpuLockIsOwner());
 
-    rmStatus = deviceGetByGpu(pClient, pGpu, NV_TRUE, &pDevice);
-    if (rmStatus != NV_OK)
-        return NV_ERR_INVALID_DEVICE;
-
-    rmStatus = CliGetKernelChannelWithDevice(pClient->hClient,
-                                             RES_GET_HANDLE(pDevice),
+    rmStatus = CliGetKernelChannelWithDevice(pClient,
+                                             hDevice,
                                              pChannelMemParams->hChannel,
                                              &pKernelChannel);
     if (rmStatus != NV_OK)
@@ -484,11 +469,15 @@ subdeviceCtrlCmdFifoGetChannelMemInfo_IMPL
 
     // Get RAMFC mem Info
     pMemDesc = NULL;
-    kfifoChannelGetFifoContextMemDesc_HAL(pGpu,
+    rmStatus = kfifoChannelGetFifoContextMemDesc_HAL(pGpu,
                                           pKernelFifo,
                                           pKernelChannel,
                                           FIFO_CTX_RAMFC,
                                           &pMemDesc);
+
+    if (rmStatus != NV_OK)
+        return rmStatus;
+
     kfifoFillMemInfo(pKernelFifo, pMemDesc, &chMemInfo.ramfc);
 
     // Get Method buffer mem info
@@ -521,18 +510,13 @@ diagapiCtrlCmdFifoEnableVirtualContext_IMPL
     NV208F_CTRL_FIFO_ENABLE_VIRTUAL_CONTEXT_PARAMS *pEnableVCParams
 )
 {
-    OBJGPU        *pGpu = GPU_RES_GET_GPU(pDiagApi);
-    Device        *pDevice;
     NV_STATUS      rmStatus = NV_OK;
     KernelChannel *pKernelChannel = NULL;
     RsClient      *pClient = RES_GET_CLIENT(pDiagApi);
-
-    rmStatus = deviceGetByGpu(pClient, pGpu, NV_TRUE, &pDevice);
-    if (rmStatus != NV_OK)
-        return NV_ERR_INVALID_DEVICE;
+    Device        *pDevice = GPU_RES_GET_DEVICE(pDiagApi);
 
     NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
-        CliGetKernelChannelWithDevice(pClient->hClient,
+        CliGetKernelChannelWithDevice(pClient,
                                       RES_GET_HANDLE(pDevice),
                                       pEnableVCParams->hChannel,
                                       &pKernelChannel));
@@ -561,6 +545,7 @@ subdeviceCtrlCmdFifoUpdateChannelInfo_IMPL
     CALL_CONTEXT             *pCallContext  = resservGetTlsCallContext();
     RmCtrlParams             *pRmCtrlParams = pCallContext->pControlParams;
     OBJGPU                   *pGpu           = GPU_RES_GET_GPU(pSubdevice);
+    RsClient                 *pChannelClient;
     NvHandle                  hClient        = RES_GET_CLIENT_HANDLE(pSubdevice);
     KernelChannel            *pKernelChannel = NULL;
     NV_STATUS                 status         = NV_OK;
@@ -571,7 +556,12 @@ subdeviceCtrlCmdFifoUpdateChannelInfo_IMPL
     LOCK_ASSERT_AND_RETURN(pRmCtrlParams->bDeferredApi || rmGpuLockIsOwner());
 
     NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
-                          CliGetKernelChannel(pChannelInfo->hClient,
+                          serverGetClientUnderLock(&g_resServ,
+                                                   pChannelInfo->hClient,
+                                                   &pChannelClient));
+
+    NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
+                          CliGetKernelChannel(pChannelClient,
                                               pChannelInfo->hChannel,
                                               &pKernelChannel));
     NV_ASSERT_OR_RETURN(pKernelChannel != NULL, NV_ERR_INVALID_CHANNEL);
@@ -631,10 +621,15 @@ diagapiCtrlCmdFifoGetChannelState_IMPL
 )
 {
     OBJGPU *pGpu = GPU_RES_GET_GPU(pDiagApi);
+    RsClient *pChannelClient;
     KernelChannel *pKernelChannel;
 
     NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
-        CliGetKernelChannel(pChannelStateParams->hClient, pChannelStateParams->hChannel, &pKernelChannel));
+        serverGetClientUnderLock(&g_resServ, pChannelStateParams->hClient,
+            &pChannelClient));
+
+    NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
+        CliGetKernelChannel(pChannelClient, pChannelStateParams->hChannel, &pKernelChannel));
     NV_CHECK_OK_OR_RETURN(LEVEL_INFO,
         kchannelGetChannelPhysicalState(pGpu, pKernelChannel, pChannelStateParams));
 

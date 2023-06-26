@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -20,6 +20,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
+#define NVOC_KERNEL_NVLINK_H_PRIVATE_ACCESS_ALLOWED
 
 #include "gpu/gpu.h"
 #include "gpu/subdevice/subdevice.h"
@@ -589,6 +591,7 @@ subdeviceCtrlCmdBusGetNvlinkStatus_IMPL
     NvBool bMIGNvLinkP2PSupported = ((pKernelMIGManager != NULL) &&
                                      kmigmgrIsMIGNvlinkP2PSupported(pGpu, pKernelMIGManager));
     NV_STATUS status = NV_OK;
+    NvBool    bIsNvlinkReady = NV_TRUE;
     NvU8 i = 0;
     struct
     {
@@ -621,7 +624,7 @@ subdeviceCtrlCmdBusGetNvlinkStatus_IMPL
                 FOR_EACH_INDEX_IN_MASK(32, i, pParams->enabledLinkMask)
                 {
                     NV2080_CTRL_NVLINK_DEVICE_INFO *pDeviceInfo = &pParams->linkInfo[i].remoteDeviceInfo;
-                    OBJGPU *pLoopGpu = gpumgrGetGpuFromUuid(pDeviceInfo->deviceUUID, 
+                    OBJGPU *pLoopGpu = gpumgrGetGpuFromUuid(pDeviceInfo->deviceUUID,
                                                             DRF_DEF(2080_GPU_CMD, _GPU_GET_GID_FLAGS, _TYPE, _SHA1) |
                                                             DRF_DEF(2080_GPU_CMD, _GPU_GET_GID_FLAGS, _FORMAT, _BINARY));
 
@@ -696,12 +699,16 @@ subdeviceCtrlCmdBusGetNvlinkStatus_IMPL
             // as not ready
             //
             status = knvlinkCoreGetRemoteDeviceInfo(pGpu, pKernelNvlink);
-            if (status != NV_OK)
+            if (status == NV_ERR_NOT_READY)
             {
                 NV_PRINTF(LEVEL_INFO, "Nvlink is not ready yet!\n");
-                status = NV_ERR_NOT_READY;
+                bIsNvlinkReady = NV_FALSE;
+            }
+            else if (status != NV_OK)
+            {
                 goto done;
             }
+
         }
 
         //
@@ -711,7 +718,8 @@ subdeviceCtrlCmdBusGetNvlinkStatus_IMPL
         //
         knvlinkFilterBridgeLinks_HAL(pGpu, pKernelNvlink);
 
-        pParams->enabledLinkMask = pKernelNvlink->enabledLinks;
+        // If nvlink is not ready don't report back any links as being enabled
+        pParams->enabledLinkMask = (bIsNvlinkReady) ? pKernelNvlink->enabledLinks : 0x0;
 
         pTmpData->nvlinkLinkAndClockInfoParams.linkMask = pParams->enabledLinkMask;
         pTmpData->nvlinkLinkAndClockInfoParams.bSublinkStateInst = pParams->bSublinkStateInst;

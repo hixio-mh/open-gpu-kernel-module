@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -62,6 +62,7 @@ dispcmnCtrlCmdSpecificSetAcpiIdMapping_IMPL
                                staticCast(pDispCommon, DisplayApi),
                                DISPAPI_GET_GPUGRP(pDispCommon),
                                &pGpu,
+                               NULL,
                                pParams->mapTable[acpiIdx].subDeviceInstance);
         if (status != NV_OK)
             return status;
@@ -93,6 +94,48 @@ dispcmnCtrlCmdSpecificSetAcpiIdMapping_IMPL
 
     pGpu = pOrigGpu;
     gpumgrSetBcEnabledStatus(pGpu, bcState);
+
+    return status;
+}
+
+NV_STATUS
+dispcmnCtrlCmdSystemAcpiSubsystemActivated_IMPL
+(
+    DispCommon *pDispCommon,
+    NV0073_CTRL_SYSTEM_ACPI_SUBSYSTEM_ACTIVATED_PARAMS *pParams
+)
+{
+    OBJGPU    *pGpu   = DISPAPI_GET_GPU(pDispCommon);
+    RM_API    *pRmApi = GPU_GET_PHYSICAL_RMAPI(pGpu);
+    OBJOS     *pOs    = NULL;
+    NV_STATUS  status = NV_OK;
+
+    // client gave us a subdevice #: get right pGpu/pDisp for it
+    status = dispapiSetUnicastAndSynchronize_HAL(
+                               staticCast(pDispCommon, DisplayApi),
+                               DISPAPI_GET_GPUGRP(pDispCommon),
+                               &pGpu,
+                               NULL,
+                               pParams->subDeviceInstance);
+    if (status != NV_OK)
+    {
+        return status;
+    }
+
+    pOs = GPU_GET_OS(pGpu);
+
+    pOs->setProperty(pOs, PDB_PROP_OS_WAIT_FOR_ACPI_SUBSYSTEM, NV_FALSE);
+
+    status = pRmApi->Control(pRmApi, pGpu->hInternalClient, pGpu->hInternalSubdevice,
+                             NV2080_CTRL_CMD_INTERNAL_DISPLAY_ACPI_SUBSYSTEM_ACTIVATED,
+                             NULL, 0);
+
+    if (status != NV_OK)
+    {
+        NV_PRINTF(LEVEL_INFO,
+                  "ERROR: NV0073_CTRL_SYSTEM_ACPI_SUBSYSTEM_ACTIVATED control call failed. "
+                  "Should be rmapi ctrl call which is failed");
+    }
 
     return status;
 }
@@ -167,6 +210,11 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
     {
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_MXMX:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_MXMX_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
             //
             // get display mask from input buffer
             // display mask is 4 byte long and available at byte 1
@@ -181,27 +229,55 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
             // get acpi id
             acpiId = pfmFindAcpiId(pPfm, pGpu, displayMask);
 
-            outStatus = pOS->osCallACPI_MXMX(pGpu, acpiId, pInOutData);
+            outDataSize = sizeof(NvU32);
+            outStatus = osCallACPI_MXMX(pGpu, acpiId, pInOutData);
             break;
 
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_GPUON:
         {
-            outStatus = pOS->osCallACPI_NVHG_GPUON(pGpu, (NvU32*) pInOutData);
+            if (inOutDataSize < sizeof(NvU32))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
+            outDataSize = sizeof(NvU32);
+            outStatus = osCallACPI_NVHG_GPUON(pGpu, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_GPUOFF:
         {
-            outStatus = pOS->osCallACPI_NVHG_GPUOFF(pGpu, (NvU32*) pInOutData);
+            if (inOutDataSize < sizeof(NvU32))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
+            outDataSize = sizeof(NvU32);
+            outStatus = osCallACPI_NVHG_GPUOFF(pGpu, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_GPUSTA:
         {
+            if (inOutDataSize < sizeof(NvU32))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
+            outDataSize = sizeof(NvU32);
             outStatus = pOS->osCallACPI_NVHG_GPUSTA(pGpu, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_MXDS:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_MXDS_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             //
             // get acpi id from input buffer
             // acpi id is 4 byte long and available at byte 4
@@ -213,11 +289,18 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
                         ((NvU8*) pInOutData) + NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_MXDS_DISP_MASK_OFFSET,
                         sizeof(NvU32));
 
+            outDataSize = sizeof(NvU32);
             outStatus = pOS->osCallACPI_NVHG_MXDS(pGpu, acpiId, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXDS:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXDS_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             //
             // get acpi id from input buffer
             // acpi id is 4 byte long and available at byte 4
@@ -229,11 +312,18 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
                         ((NvU8*) pInOutData) + NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXDS_DISP_MASK_OFFSET,
                         sizeof(NvU32));
 
-            outStatus = pOS->osCallACPI_MXDS(pGpu, acpiId, (NvU32*) pInOutData);
+            outDataSize = sizeof(NvU32);
+            outStatus = osCallACPI_MXDS(pGpu, acpiId, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXDM:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXDM_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             //
             // get acpi id from input buffer
             // acpi id is 4 byte long and available at byte 4
@@ -245,44 +335,72 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
                         ((NvU8*) pInOutData) + NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXDM_DISP_MASK_OFFSET,
                         sizeof(NvU32));
 
-            outStatus = pOS->osCallACPI_MXDM(pGpu, acpiId, (NvU32*) pInOutData);
+            outStatus = osCallACPI_MXDM(pGpu, acpiId, (NvU32*) pInOutData);
+            outDataSize = sizeof(NvU32);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXID:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXID_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             // get acpi id from input buffer
             portMemCopy(&acpiId,
                         sizeof(NvU32),
                         ((NvU8*) pInOutData) + NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_MXID_DISP_MASK_OFFSET,
                         sizeof(NvU32));
-            outStatus = pOS->osCallACPI_MXID(pGpu, acpiId, (NvU32*) pInOutData);
+
+            outDataSize = sizeof(NvU32);
+            outStatus = osCallACPI_MXID(pGpu, acpiId, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_LRST:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_LRST_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             portMemCopy(&acpiId,
                         sizeof(NvU32),
                         ((NvU8*) pInOutData) + NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NBCI_LRST_DISP_MASK_OFFSET,
                         sizeof(NvU32));
 
-            outStatus = pOS->osCallACPI_LRST(pGpu, acpiId, (NvU32*) pInOutData);
+            outStatus = osCallACPI_LRST(pGpu, acpiId, (NvU32*) pInOutData);
+            outDataSize = sizeof(NvU32);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DDC_EDID:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DDC_EDID_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             portMemCopy(&acpiId,
                         sizeof(NvU32),
                         ((NvU8*) pInOutData) + NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DDC_EDID_DISP_MASK_OFFSET,
                         sizeof(NvU32));
 
             NvU32 outSize = outDataSize;
-            outStatus = pOS->osCallACPI_DDC(pGpu, acpiId, (NvU8*) pInOutData,
-                                            &outSize, NV_TRUE /*bReadMultiBlock*/);
+            outStatus = osCallACPI_DDC(pGpu, acpiId, (NvU8*) pInOutData,
+                                       &outSize, NV_TRUE /*bReadMultiBlock*/);
             outDataSize = (NvU16) outSize;
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NVHG_MXMX:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_NVHG_MXMX_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             //
             // get acpi id from input buffer
             // acpi id is 4 byte long and available at byte 4
@@ -297,11 +415,17 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
             // get acpi id
             acpiId = pfmFindAcpiId(pPfm, pGpu, displayMask);
 
+            outDataSize = sizeof(NvU32);
             outStatus = pOS->osCallACPI_NVHG_MXMX(pGpu, acpiId, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DOS:
         {
+            if (inOutDataSize < (NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DOS_DISP_MASK_OFFSET + sizeof(NvU32)))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
             //
             // get acpi id from input buffer
             // acpi id is 4 byte long and available at byte 4
@@ -316,135 +440,151 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
             // get acpi id
             acpiId = pfmFindAcpiId(pPfm, pGpu, displayMask);
 
+            outDataSize = sizeof(NvU32);
             outStatus = pOS->osCallACPI_NVHG_DOS(pGpu, acpiId, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_ROM:
         {
-            outStatus = pGpu->pOS->osCallACPI_NVHG_ROM(pGpu, (NvU32*) pInOutData, (NvU32*) pInOutData);
+            NvU32 *pBuffer = (NvU32*) pInOutData;
+            if ((inOutDataSize < (2 * sizeof(NvU32))) || (inOutDataSize < pBuffer[1]))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
+            outDataSize = pBuffer[1];
+            outStatus = osCallACPI_NVHG_ROM(pGpu, (NvU32*) pInOutData, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DCS:
         {
+            if (inOutDataSize < sizeof(NvU32))
+            {
+                outStatus = NV_ERR_INVALID_ARGUMENT;
+                break;
+            }
+
             // get display mask from input buffer
             portMemCopy(&acpiId, sizeof(NvU32), pInOutData, sizeof(NvU32));
 
+            outDataSize = sizeof(NvU32);
             outStatus = pOS->osCallACPI_NVHG_DCS(pGpu, acpiId, (NvU32*) pInOutData);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DOD:
         {
             NvU32 size32 = inOutDataSize;
-            outStatus = pOS->osCallACPI_DOD(pGpu, (NvU32*) pInOutData, &size32);
+            outStatus = osCallACPI_DOD(pGpu, (NvU32*) pInOutData, &size32);
             outDataSize = (NvU16) size32;
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_SUPPORT:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_SUPPORT, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_SUPPORT, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HYBRIDCAPS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HYBRIDCAPS, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HYBRIDCAPS, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_POLICYSELECT:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_POLICYSELECT, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_POLICYSELECT, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_POWERCONTROL:
         {
 
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_POWERCONTROL, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_POWERCONTROL, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_PLATPOLICY:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_PLATPOLICY, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_PLATPOLICY, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_DISPLAYSTATUS:
         {
             if (pGpu->getProperty(pGpu, PDB_PROP_GPU_IS_MXM_3X))
-                outStatus = pGpu->pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXDP, (NvU32*)pInOutData, &outDataSize);
+                outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXDP, (NvU32*)pInOutData, &outDataSize);
             else
-                outStatus = pGpu->pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_DISPLAYSTATUS, (NvU32*)pInOutData, &outDataSize);
+                outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_DISPLAYSTATUS, (NvU32*)pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MDTL:
         {
             if (pGpu->getProperty(pGpu, PDB_PROP_GPU_IS_MXM_3X))
-                outStatus = pGpu->pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MDTL, (NvU32*)pInOutData, &outDataSize);
+                outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MDTL, (NvU32*)pInOutData, &outDataSize);
             else
-                outStatus = pGpu->pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_MDTL, (NvU32*)pInOutData, &outDataSize);
+                outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_MDTL, (NvU32*)pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCSMBLIST:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCSMBLIST, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCSMBLIST, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCSMBADDR:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCSMBADDR, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCSMBADDR, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCREADBYTE:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCREADBYTE, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCREADBYTE, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCSENDBYTE:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCSENDBYTE, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCSENDBYTE, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCGETSTATUS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCGETSTATUS, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCGETSTATUS, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCTRIGDDC:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCTRIGDDC, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCTRIGDDC, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_HCGETDDC:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCGETDDC, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_HCGETDDC, (NvU32*) pInOutData, &outDataSize);
             break;
         }
 
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MXSS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXSS, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXSS, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MXMI:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXMI, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXMI, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MXMS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXMS, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXMS, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MXPP:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXPP, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXPP, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MXDP:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXDP, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MXDP, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MDTL:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MDTL, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_MDTL, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_MXCB:
@@ -454,27 +594,27 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_MXM_GETEVENTLIST:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_GETEVENTLIST, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_MXM, NV_ACPI_DSM_MXM_FUNC_GETEVENTLIST, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GETMEMTABLE:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETMEMTABLE, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETMEMTABLE, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GETMEMCFG:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETMEMCFG, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETMEMCFG, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GETOBJBYTYPE:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETOBJBYTYPE, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETOBJBYTYPE, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GETALLOBJS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETALLOBJS, (NvU32*) pInOutData, &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu, ACPI_DSM_FUNCTION_NVHG, NVHG_FUNC_GETALLOBJS, (NvU32*) pInOutData, &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_CTL_GETSUPPORTEDFUNC:
@@ -489,106 +629,106 @@ dispcmnCtrlCmdSystemExecuteAcpiMethod_IMPL
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_DISPLAYSTATUS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_DISPLAYSTATUS-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_DISPLAYSTATUS-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_DISPLAYSTATUS-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_DISPLAYSTATUS-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_MDTL:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_MDTL-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_MDTL-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_MDTL-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_MDTL-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_MSTL:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_MSTL-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_MSTL-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_MSTL-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_MSTL-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_GETOBJBYTYPE:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETOBJBYTYPE-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETOBJBYTYPE-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETOBJBYTYPE-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETOBJBYTYPE-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_GETALLOBJS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETALLOBJS-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETALLOBJS-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETALLOBJS-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETALLOBJS-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_GETEVENTLIST:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETEVENTLIST-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETEVENTLIST-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETEVENTLIST-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETEVENTLIST-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_GETBACKLIGHT:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETBACKLIGHT-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETBACKLIGHT-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_GETBACKLIGHT-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_GETBACKLIGHT-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_GENERIC_GETCALLBACKS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_CALLBACKS-NV_ACPI_GENERIC_FUNC_START],
-                                            pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_CALLBACKS-NV_ACPI_GENERIC_FUNC_START],
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       pGpu->acpi.dsmCurrentFunc[NV_ACPI_GENERIC_FUNC_CALLBACKS-NV_ACPI_GENERIC_FUNC_START],
+                                       pGpu->acpi.dsmCurrentSubFunc[NV_ACPI_GENERIC_FUNC_CALLBACKS-NV_ACPI_GENERIC_FUNC_START],
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_NBCI_SUPPORTFUNCS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            ACPI_DSM_FUNCTION_NBCI,
-                                            NV_NBCI_FUNC_SUPPORT,
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       ACPI_DSM_FUNCTION_NBCI,
+                                       NV_NBCI_FUNC_SUPPORT,
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_NBCI_PLATCAPS:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            ACPI_DSM_FUNCTION_NBCI,
-                                            NV_NBCI_FUNC_PLATCAPS,
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       ACPI_DSM_FUNCTION_NBCI,
+                                       NV_NBCI_FUNC_PLATCAPS,
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_DSM_NBCI_PLATPOLICY:
         {
-            outStatus = pOS->osCallACPI_DSM(pGpu,
-                                            ACPI_DSM_FUNCTION_NBCI,
-                                            NV_NBCI_FUNC_PLATPOLICY,
-                                            (NvU32*) pInOutData,
-                                            &outDataSize);
+            outStatus = osCallACPI_DSM(pGpu,
+                                       ACPI_DSM_FUNCTION_NBCI,
+                                       NV_NBCI_FUNC_PLATPOLICY,
+                                       (NvU32*) pInOutData,
+                                       &outDataSize);
             break;
         }
         case NV0073_CTRL_SYSTEM_EXECUTE_ACPI_METHOD_WMMX_NVOP_GPUON:
         {
-            outStatus = pOS->osCallACPI_OPTM_GPUON(pGpu);
+            outStatus = osCallACPI_OPTM_GPUON(pGpu);
             break;
         }
         default:

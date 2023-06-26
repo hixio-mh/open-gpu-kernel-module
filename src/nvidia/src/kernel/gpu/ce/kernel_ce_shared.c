@@ -139,13 +139,20 @@ subdeviceCtrlCmdCeGetCapsV2_IMPL
 {
     OBJGPU *pGpu = GPU_RES_GET_GPU(pSubdevice);
     NvU32 ceNumber;
-    RM_ENGINE_TYPE rmEngineType = gpuGetRmEngineType(pCeCapsParams->ceEngineType); 
+    RM_ENGINE_TYPE rmEngineType = gpuGetRmEngineType(pCeCapsParams->ceEngineType);
 
     LOCK_ASSERT_AND_RETURN(rmapiLockIsOwner());
 
     NV_PRINTF(LEVEL_INFO, "NV2080_CTRL_CE_GET_CAPS_V2 ceEngineType = %d\n", pCeCapsParams->ceEngineType);
 
-    NV_ASSERT_OK_OR_RETURN(ceIndexFromType(pGpu, RES_GET_CLIENT_HANDLE(pSubdevice), rmEngineType, &ceNumber));
+    if (!RM_ENGINE_TYPE_IS_COPY(rmEngineType))
+    {
+        return NV_ERR_NOT_SUPPORTED;
+    }
+
+    NV_ASSERT_OK_OR_RETURN(ceIndexFromType(pGpu,
+                                           GPU_RES_GET_DEVICE(pSubdevice),
+                                           rmEngineType, &ceNumber));
 
     {
         KernelCE *pKCe = GPU_GET_KCE(pGpu, ceNumber);
@@ -172,7 +179,7 @@ subdeviceCtrlCmdCeGetAllCaps_IMPL
 {
     RM_API *pRmApi;
     OBJGPU *pGpu = GPU_RES_GET_GPU(pSubdevice);
-    NvHandle hClient = RES_GET_CLIENT_HANDLE(pSubdevice);
+    Device *pDevice = GPU_RES_GET_DEVICE(pSubdevice);
 
     ct_assert(ENG_CE__SIZE_1 <= sizeof(pCeCapsParams->capsTbl) / sizeof(pCeCapsParams->capsTbl[0]));
 
@@ -205,7 +212,7 @@ subdeviceCtrlCmdCeGetAllCaps_IMPL
         KernelCE *pKCe;
         KernelNvlink *pKernelNvlink = GPU_GET_KERNEL_NVLINK(pGpu);
 
-        KCE_ITER_CLIENT_BEGIN(pGpu, pKCe, hClient)
+        KCE_ITER_DEVICE_BEGIN(pGpu, pKCe, pDevice)
             if (pKCe->bStubbed)
                 continue;
 

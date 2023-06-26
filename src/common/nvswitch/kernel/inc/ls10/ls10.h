@@ -175,6 +175,9 @@
 
 #define NVSWITCH_NUM_LINKS_PER_NVLIPT_LS10              (NVSWITCH_NUM_LINKS_LS10/NUM_NVLIPT_ENGINE_LS10)
 
+#define NVSWITCH_NVLIPT_GET_PUBLIC_ID_LS10(_physlinknum) \
+    ((_physlinknum)/NVSWITCH_LINKS_PER_NVLIPT_LS10)
+
 #define NVSWITCH_NVLIPT_GET_LOCAL_LINK_ID_LS10(_physlinknum) \
     ((_physlinknum)%NVSWITCH_NUM_LINKS_PER_NVLIPT_LS10)
 
@@ -182,6 +185,9 @@
     (NVBIT64(NVSWITCH_LINKS_PER_NVLIPT_LS10) - 1) << (_nvlipt_idx * NVSWITCH_LINKS_PER_NVLIPT_LS10);
 
 #define DMA_ADDR_WIDTH_LS10     64
+
+#define SOE_VBIOS_VERSION_MASK                        0xFF0000
+#define SOE_VBIOS_REVLOCK_DISABLE_NPORT_FATAL_INTR    0x370000
 
 //
 // Helpful IO wrappers
@@ -497,10 +503,16 @@ typedef struct
               NV_NPORT_PORTSTAT_LS10(_block, _reg, _idx, ), _data);                 \
     }
 
-#define NVSWITCH_DEFERRED_LINK_STATE_CHECK_INTERVAL_NS (10 * NVSWITCH_INTERVAL_1SEC_IN_NS)
-#define NVSWITCH_DEFERRED_FAULT_UP_CHECK_INTERVAL_NS   (10 * NVSWITCH_INTERVAL_1MSEC_IN_NS)
+#define NVSWITCH_DEFERRED_LINK_STATE_CHECK_INTERVAL_NS (12 * NVSWITCH_INTERVAL_1SEC_IN_NS)
+#define NVSWITCH_DEFERRED_FAULT_UP_CHECK_INTERVAL_NS   (12 * NVSWITCH_INTERVAL_1MSEC_IN_NS)
 
 // Struct used for passing around error masks in error handling functions
+typedef struct
+{
+    NvBool bPending;
+    NvU32  regData;
+} MINION_LINK_INTR;
+
 typedef struct
 {
     NvU32 dl;
@@ -510,12 +522,14 @@ typedef struct
     NvU32 tlcRx1Injected;
     NvU32 liptLnk;
     NvU32 liptLnkInjected;
+    MINION_LINK_INTR minionLinkIntr;
 } NVLINK_LINK_ERROR_INFO_ERR_MASKS, *PNVLINK_LINK_ERROR_INFO_ERR_MASKS;
 
 typedef struct
-{     
+{
     NvBool bLinkErrorsCallBackEnabled;
     NvBool bLinkStateCallBackEnabled;
+    NvBool bResetAndDrainRetry;
 
     NVLINK_LINK_ERROR_INFO_ERR_MASKS fatalIntrMask;
     NVLINK_LINK_ERROR_INFO_ERR_MASKS nonFatalIntrMask;
@@ -749,6 +763,15 @@ typedef const struct
 } RISCV_UCODE_HDR_INFO_LS10, *PRISCV_UCODE_HDR_INFO_LS10;
 
 //
+// defines used by internal ls10 functions to get
+// specific clock status
+//
+#define NVSWITCH_PER_LINK_CLOCK_RXCLK     0
+#define NVSWITCH_PER_LINK_CLOCK_TXCLK     1
+#define NVSWITCH_PER_LINK_CLOCK_NCISOCCLK 2
+#define NVSWITCH_PER_LINK_CLOCK_NUM       3
+#define NVSWITCH_PER_LINK_CLOCK_SET(_name) BIT(NVSWITCH_PER_LINK_CLOCK_##_name)
+//
 // HAL functions shared by LR10 and used by LS10
 //
 
@@ -781,7 +804,6 @@ typedef const struct
 #define nvswitch_ctrl_get_info_ls10                 nvswitch_ctrl_get_info_lr10
 
 #define nvswitch_ctrl_set_switch_port_config_ls10   nvswitch_ctrl_set_switch_port_config_lr10
-#define nvswitch_ctrl_get_fom_values_ls10           nvswitch_ctrl_get_fom_values_lr10
 #define nvswitch_ctrl_get_throughput_counters_ls10  nvswitch_ctrl_get_throughput_counters_lr10
 
 #define nvswitch_save_nvlink_seed_data_from_minion_to_inforom_ls10  nvswitch_save_nvlink_seed_data_from_minion_to_inforom_lr10
@@ -798,10 +820,6 @@ typedef const struct
 #define nvswitch_corelib_write_discovery_token_ls10 nvswitch_corelib_write_discovery_token_lr10
 #define nvswitch_corelib_read_discovery_token_ls10  nvswitch_corelib_read_discovery_token_lr10
 
-#define nvswitch_inforom_nvl_get_minion_data_ls10   nvswitch_inforom_nvl_get_minion_data_lr10
-#define nvswitch_inforom_nvl_set_minion_data_ls10   nvswitch_inforom_nvl_set_minion_data_lr10
-#define nvswitch_inforom_nvl_get_max_correctable_error_rate_ls10 nvswitch_inforom_nvl_get_max_correctable_error_rate_lr10
-#define nvswitch_inforom_nvl_get_errors_ls10        nvswitch_inforom_nvl_get_errors_lr10
 #define nvswitch_inforom_ecc_log_error_event_ls10   nvswitch_inforom_ecc_log_error_event_lr10
 #define nvswitch_inforom_ecc_get_errors_ls10        nvswitch_inforom_ecc_get_errors_lr10
 #define nvswitch_inforom_bbx_get_sxid_ls10          nvswitch_inforom_bbx_get_sxid_lr10
@@ -857,7 +875,6 @@ NvlStatus nvswitch_ctrl_get_nvlink_status_ls10(nvswitch_device *device, NVSWITCH
 NvlStatus nvswitch_ctrl_get_info_lr10(nvswitch_device *device, NVSWITCH_GET_INFO *p);
 
 NvlStatus nvswitch_ctrl_set_switch_port_config_lr10(nvswitch_device *device, NVSWITCH_SET_SWITCH_PORT_CONFIG *p);
-NvlStatus nvswitch_ctrl_get_fom_values_lr10(nvswitch_device *device, NVSWITCH_GET_FOM_VALUES_PARAMS *p);
 NvlStatus nvswitch_ctrl_get_throughput_counters_lr10(nvswitch_device *device, NVSWITCH_GET_THROUGHPUT_COUNTERS_PARAMS *p);
 void      nvswitch_save_nvlink_seed_data_from_minion_to_inforom_lr10(nvswitch_device *device, NvU32 linkId);
 void      nvswitch_store_seed_data_from_inforom_to_corelib_lr10(nvswitch_device *device);
@@ -878,10 +895,6 @@ NvlStatus nvswitch_corelib_set_tx_mode_lr10(nvlink_link *link, NvU64 mode, NvU32
 NvlStatus nvswitch_corelib_get_tl_link_mode_lr10(nvlink_link *link, NvU64 *mode);
 void      nvswitch_init_buffer_ready_lr10(nvswitch_device *device, nvlink_link *link, NvBool bNportBufferReady);
 
-NvlStatus nvswitch_inforom_nvl_get_minion_data_lr10(nvswitch_device *device, void *pNvlGeneric, NvU8 linkId, NvU32 *seedData);
-NvlStatus nvswitch_inforom_nvl_set_minion_data_lr10(nvswitch_device *device, void *pNvlGeneric, NvU8 linkId, NvU32 *seedData, NvU32 size, NvBool *bDirty);
-NvlStatus nvswitch_inforom_nvl_get_max_correctable_error_rate_lr10(nvswitch_device *device, NVSWITCH_GET_NVLINK_MAX_CORRECTABLE_ERROR_RATES_PARAMS *params);
-NvlStatus nvswitch_inforom_nvl_get_errors_lr10(nvswitch_device *device, NVSWITCH_GET_NVLINK_ERROR_COUNTS_PARAMS *params);
 NvlStatus nvswitch_inforom_ecc_log_error_event_lr10(nvswitch_device *device, INFOROM_ECC_OBJECT *pEccGeneric, INFOROM_NVS_ECC_ERROR_EVENT *err_event);
 NvlStatus nvswitch_inforom_ecc_get_errors_lr10(nvswitch_device *device, NVSWITCH_GET_ECC_ERROR_COUNTS_PARAMS *params);
 NvlStatus nvswitch_inforom_bbx_get_sxid_lr10(nvswitch_device *device, NVSWITCH_GET_SXIDS_PARAMS *params);
@@ -961,16 +974,18 @@ void      nvswitch_store_topology_information_ls10(nvswitch_device *device, nvli
 NvlStatus nvswitch_ctrl_i2c_indexed_ls10(nvswitch_device *device, NVSWITCH_CTRL_I2C_INDEXED_PARAMS *pParams);
 NvBool    nvswitch_i2c_is_device_access_allowed_ls10(nvswitch_device *device, NvU32 port, NvU8 addr, NvBool bIsRead);
 NvlStatus nvswitch_minion_get_ali_debug_registers_ls10(nvswitch_device *device, nvlink_link *link, NVSWITCH_MINION_ALI_DEBUG_REGISTERS *params);
+void      nvswitch_execute_unilateral_link_shutdown_ls10(nvlink_link *link);
 void      nvswitch_setup_link_system_registers_ls10(nvswitch_device *device, nvlink_link *link);
 void      nvswitch_load_link_disable_settings_ls10(nvswitch_device *device, nvlink_link *link);
 void      nvswitch_link_disable_interrupts_ls10(nvswitch_device *device, NvU32 link);
-void      nvswitch_execute_unilateral_link_shutdown_ls10(nvlink_link *link);
 
 void      nvswitch_init_dlpl_interrupts_ls10(nvlink_link *link);
+void      nvswitch_set_dlpl_interrupts_ls10(nvlink_link *link);
 NvlStatus nvswitch_reset_and_drain_links_ls10(nvswitch_device *device, NvU64 link_mask);
 
 void      nvswitch_service_minion_all_links_ls10(nvswitch_device *device);
 NvlStatus nvswitch_ctrl_get_board_part_number_ls10(nvswitch_device *device, NVSWITCH_GET_BOARD_PART_NUMBER_VECTOR *p);
+void      nvswitch_create_deferred_link_state_check_task_ls10(nvswitch_device *device, NvU32 nvlipt_instance, NvU32 link);
 
 //
 // SU generated functions
@@ -985,15 +1000,16 @@ NvlStatus nvswitch_launch_ALI_ls10(nvswitch_device *device);
 NvlStatus nvswitch_ctrl_set_mc_rid_table_ls10(nvswitch_device *device, NVSWITCH_SET_MC_RID_TABLE_PARAMS *p);
 NvlStatus nvswitch_ctrl_get_mc_rid_table_ls10(nvswitch_device *device, NVSWITCH_GET_MC_RID_TABLE_PARAMS *p);
 
-void      nvswitch_init_dlpl_interrupts_ls10(nvlink_link *link);
-NvlStatus nvswitch_reset_and_drain_links_ls10(nvswitch_device *device, NvU64 link_mask);
-
 void      nvswitch_service_minion_all_links_ls10(nvswitch_device *device);
 
 NvBool    nvswitch_is_inforom_supported_ls10(nvswitch_device *device);
 void      nvswitch_set_error_rate_threshold_ls10(nvlink_link *link, NvBool bIsDefault);
 void      nvswitch_configure_error_rate_threshold_interrupt_ls10(nvlink_link *link, NvBool bEnable);
 NvlStatus nvswitch_reset_and_train_link_ls10(nvswitch_device *device, nvlink_link *link);
+NvBool    nvswitch_are_link_clocks_on_ls10(nvswitch_device *device, nvlink_link *link, NvU32 clocksMask);
+NvBool    nvswitch_does_link_need_termination_enabled_ls10(nvswitch_device *device, nvlink_link *link);
+NvlStatus nvswitch_link_termination_setup_ls10(nvswitch_device *device, nvlink_link* link);
+void      nvswitch_get_error_rate_threshold_ls10(nvlink_link *link);
 
 #endif //_LS10_H_
 

@@ -121,10 +121,10 @@ NV_STATUS resControlLookup_IMPL
     const struct NVOC_EXPORTED_METHOD_DEF **ppEntry
 )
 {
-    const struct NVOC_EXPORTED_METHOD_DEF *pEntry;    
-    NvU32 cmd = pRsParams->cmd;    
+    const struct NVOC_EXPORTED_METHOD_DEF *pEntry;
+    NvU32 cmd = pRsParams->cmd;
 
-    *ppEntry = NULL;    
+    *ppEntry = NULL;
     pEntry = objGetExportedMethodDef(staticCast(objFullyDerive(pResource), Dynamic), cmd);
 
     if (pEntry == NULL)
@@ -184,6 +184,10 @@ resControl_IMPL
     if (status != NV_OK)
         return status;
 
+    status = resControlSerialization_Prologue(pResource, pCallContext, pRsParams);
+    if (status != NV_OK)
+        goto done;
+
     status = resControl_Prologue(pResource, pCallContext, pRsParams);
     if ((status != NV_OK) && (status != NV_WARN_NOTHING_TO_DO))
         goto done;
@@ -207,6 +211,7 @@ resControl_IMPL
         else
         {
             CONTROL_EXPORT_FNPTR pFunc = ((CONTROL_EXPORT_FNPTR) pEntry->pFunc);
+
             status = pFunc(pDynamicObj, pRsParams->pParams);
         }
     }
@@ -214,6 +219,7 @@ resControl_IMPL
     resControl_Epilogue(pResource, pCallContext, pRsParams);
 
 done:
+    resControlSerialization_Epilogue(pResource, pCallContext, pRsParams);
     status = serverControl_Epilogue(pServer, pRsParams, access, &releaseFlags, status);
 
     return status;
@@ -228,6 +234,27 @@ resControlFilter_IMPL
 )
 {
     return NV_OK;
+}
+
+NV_STATUS
+resControlSerialization_Prologue_IMPL
+(
+    RsResource                     *pResource,
+    CALL_CONTEXT                   *pCallContext,
+    RS_RES_CONTROL_PARAMS_INTERNAL *pParams
+)
+{
+    return NV_OK;
+}
+
+void
+resControlSerialization_Epilogue_IMPL
+(
+    RsResource                     *pResource,
+    CALL_CONTEXT                   *pCallContext,
+    RS_RES_CONTROL_PARAMS_INTERNAL *pParams
+)
+{
 }
 
 NV_STATUS
@@ -767,15 +794,20 @@ refAddDependant
     RsResourceRef *pDependantRef
 )
 {
+    NV_STATUS status;
+
     // dependencies are implicit between a parent resource reference and child resource reference
     if (refHasAncestor(pDependantRef, pResourceRef))
         return NV_OK;
 
-    indexAdd(&pDependantRef->depBackRefMap, pResourceRef->internalClassId, pResourceRef);
+    status = indexAdd(&pDependantRef->depBackRefMap, pResourceRef->internalClassId, pResourceRef);
+    if (status != NV_OK)
+        return status;
+
     return indexAdd(&pResourceRef->depRefMap, pDependantRef->internalClassId, pDependantRef);
 }
 
-NV_STATUS
+void
 refRemoveDependant
 (
     RsResourceRef *pResourceRef,
@@ -783,7 +815,7 @@ refRemoveDependant
 )
 {
     indexRemove(&pDependantRef->depBackRefMap, pResourceRef->internalClassId, pResourceRef);
-    return indexRemove(&pResourceRef->depRefMap, pDependantRef->internalClassId, pDependantRef);
+    indexRemove(&pResourceRef->depRefMap, pDependantRef->internalClassId, pDependantRef);
 }
 
 NvBool

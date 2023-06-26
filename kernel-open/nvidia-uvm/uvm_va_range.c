@@ -25,11 +25,13 @@
 #include "uvm_linux.h"
 #include "uvm_types.h"
 #include "uvm_api.h"
+#include "uvm_hal.h"
 #include "uvm_va_range.h"
 #include "uvm_va_block.h"
 #include "uvm_kvmalloc.h"
 #include "uvm_map_external.h"
 #include "uvm_perf_thrashing.h"
+#include "uvm_conf_computing.h"
 #include "nv_uvm_interface.h"
 
 static struct kmem_cache *g_uvm_va_range_cache __read_mostly;
@@ -114,7 +116,6 @@ static uvm_va_range_t *uvm_va_range_alloc(uvm_va_space_t *va_space, NvU64 start,
         return NULL;
 
     uvm_assert_rwsem_locked_write(&va_space->lock);
-    UVM_ASSERT(uvm_va_space_initialized(va_space) == NV_OK);
 
     va_range->va_space = va_space;
     va_range->node.start = start;
@@ -466,11 +467,7 @@ static void uvm_va_range_destroy_channel(uvm_va_range_t *va_range)
 
     // Unmap the buffer
     if (gpu_va_space && va_range->channel.pt_range_vec.ranges) {
-        if (va_range->channel.aperture == UVM_APERTURE_VID)
-            membar = UVM_MEMBAR_GPU;
-        else
-            membar = UVM_MEMBAR_SYS;
-
+        membar = uvm_hal_downgrade_membar_type(gpu_va_space->gpu, va_range->channel.aperture == UVM_APERTURE_VID);
         uvm_page_table_range_vec_clear_ptes(&va_range->channel.pt_range_vec, membar);
         uvm_page_table_range_vec_deinit(&va_range->channel.pt_range_vec);
     }
@@ -727,7 +724,10 @@ static void va_range_remove_gpu_va_space_semaphore_pool(uvm_va_range_t *va_range
 {
     UVM_ASSERT(va_range->type == UVM_VA_RANGE_TYPE_SEMAPHORE_POOL);
 
-    uvm_mem_unmap_gpu_user(va_range->semaphore_pool.mem, gpu);
+    if (uvm_conf_computing_mode_enabled(gpu) && (va_range->semaphore_pool.mem->dma_owner == gpu))
+        uvm_va_range_destroy(va_range, NULL);
+    else
+        uvm_mem_unmap_gpu_user(va_range->semaphore_pool.mem, gpu);
 }
 
 void uvm_va_range_remove_gpu_va_space(uvm_va_range_t *va_range,
@@ -1079,7 +1079,7 @@ static NV_STATUS uvm_va_range_split_blocks(uvm_va_range_t *existing, uvm_va_rang
     // Even if there was no block split above, there is no guarantee that one
     // of our blocks doesn't have the 'inject_split_error' flag set. We clear
     // that here to prevent multiple errors caused by one
-    // 'uvm_test_va_range_inject_split_error' call. 
+    // 'uvm_test_va_range_inject_split_error' call.
     if (existing->inject_split_error) {
         UVM_ASSERT(!block);
         existing->inject_split_error = false;
@@ -1194,13 +1194,6 @@ error:
     uvm_va_range_destroy(new, NULL);
     return status;
 
-}
-
-static inline uvm_va_range_t *uvm_va_range_container(uvm_range_tree_node_t *node)
-{
-    if (!node)
-        return NULL;
-    return container_of(node, uvm_va_range_t, node);
 }
 
 uvm_va_range_t *uvm_va_range_find(uvm_va_space_t *va_space, NvU64 addr)
@@ -1539,6 +1532,7 @@ NV_STATUS uvm_va_range_set_preferred_location(uvm_va_range_t *va_range,
 
     for_each_va_block_in_va_range(va_range, va_block) {
         uvm_processor_id_t id;
+        uvm_va_block_region_t region = uvm_va_block_region_from_block(va_block);
 
         for_each_id_in_mask(id, &set_accessed_by_processors) {
             status = uvm_va_block_set_accessed_by(va_block, va_block_context, id);
@@ -1551,16 +1545,22 @@ NV_STATUS uvm_va_range_set_preferred_location(uvm_va_range_t *va_range,
         uvm_mutex_lock(&va_block->lock);
         status = UVM_VA_BLOCK_RETRY_LOCKED(va_block,
                                            NULL,
-                                           uvm_va_block_set_preferred_location_locked(va_block, va_block_context));
+                                           uvm_va_block_set_preferred_location_locked(va_block,
+                                                                                      va_block_context,
+                                                                                      region));
 
-        if (out_tracker)
-            uvm_tracker_add_tracker_safe(out_tracker, &va_block->tracker);
+        if (out_tracker) {
+            NV_STATUS tracker_status;
+
+            tracker_status = uvm_tracker_add_tracker_safe(out_tracker, &va_block->tracker);
+            if (status == NV_OK)
+                status = tracker_status;
+        }
 
         uvm_mutex_unlock(&va_block->lock);
 
         if (status != NV_OK)
             return status;
-
     }
 
     // And lastly map all of the current UVM-Lite GPUs to the resident pages on

@@ -69,7 +69,6 @@ NV_STATUS
 rmControl_Deferred(RmCtrlDeferredCmd* pRmCtrlDeferredCmd)
 {
     RmCtrlParams rmCtrlParams;
-    RmClient *pClient;
     NvU8 paramBuffer[RMCTRL_DEFERRED_MAX_PARAM_SIZE];
     NV_STATUS status;
     RS_LOCK_INFO lockInfo = {0};
@@ -108,7 +107,7 @@ rmControl_Deferred(RmCtrlDeferredCmd* pRmCtrlDeferredCmd)
 
     // client was checked when we came in through rmControl()
     // but check again to make sure it's still good
-    if (serverutilGetClientUnderLock(rmCtrlParams.hClient, &pClient) != NV_OK)
+    if (serverutilGetClientUnderLock(rmCtrlParams.hClient) == NULL)
     {
         status = NV_ERR_INVALID_CLIENT;
         goto exit;
@@ -262,8 +261,11 @@ serverControlApiCopyIn
 
     RMAPI_PARAM_COPY_INIT(*pParamCopy, pRmCtrlParams->pParams, pUserParams, 1, paramsSize);
 
-    if (pCookie->apiCopyFlags & RMCTRL_API_COPY_FLAGS_SKIP_COPYIN)
+    if (pCookie->apiCopyFlags & RMCTRL_API_COPY_FLAGS_SKIP_COPYIN_ZERO_BUFFER)
+    {
         pParamCopy->flags |= RMAPI_PARAM_COPY_FLAGS_SKIP_COPYIN;
+        pParamCopy->flags |= RMAPI_PARAM_COPY_FLAGS_ZERO_BUFFER;
+    }
 
     rmStatus = rmapiParamsAcquire(pParamCopy, (pRmCtrlParams->secInfo.paramLocation == PARAM_LOCATION_USER));
     if (rmStatus != NV_OK)
@@ -388,7 +390,6 @@ static NV_STATUS
 _rmapiRmControl(NvHandle hClient, NvHandle hObject, NvU32 cmd, NvP64 pUserParams, NvU32 paramsSize, NvU32 flags, RM_API *pRmApi, API_SECURITY_INFO *pSecInfo)
 {
     OBJSYS    *pSys = SYS_GET_INSTANCE();
-    RmClient *pClient;
     RmCtrlParams rmCtrlParams;
     RS_CONTROL_COOKIE rmCtrlExecuteCookie = {0};
     NvBool bIsRaisedIrqlCmd;
@@ -396,6 +397,9 @@ _rmapiRmControl(NvHandle hClient, NvHandle hObject, NvU32 cmd, NvP64 pUserParams
     NvBool bInternalRequest;
     NV_STATUS  rmStatus = NV_OK;
     RS_LOCK_INFO        lockInfo = {0};
+    NvU32 ctrlFlags = 0;
+    NvU32 ctrlAccessRight = 0;
+    NV_STATUS getCtrlInfoStatus;
 
     RMTRACE_RMAPI(_RMCTRL_ENTRY, cmd);
 
@@ -464,7 +468,7 @@ _rmapiRmControl(NvHandle hClient, NvHandle hObject, NvU32 cmd, NvP64 pUserParams
     }
 
     // Potential race condition if run lockless?
-    if (serverutilGetClientUnderLock(hClient, &pClient) != NV_OK)
+    if (serverutilGetClientUnderLock(hClient) == NULL)
     {
         rmStatus = NV_ERR_INVALID_CLIENT;
         goto done;
@@ -512,6 +516,18 @@ _rmapiRmControl(NvHandle hClient, NvHandle hObject, NvU32 cmd, NvP64 pUserParams
     {
         lockInfo.state |= RM_LOCK_STATES_API_LOCK_ACQUIRED;
         lockInfo.flags |= RM_LOCK_FLAGS_NO_API_LOCK;
+    }
+
+    getCtrlInfoStatus = rmapiutilGetControlInfo(cmd, &ctrlFlags, &ctrlAccessRight);
+    if (getCtrlInfoStatus == NV_OK)
+    {
+        //
+        // The output of CACHEABLE RMCTRL do not depend on the input.
+        // Skip param copy and clear the buffer in case the uninitialized
+        // buffer leaks information to clients.
+        //
+        if (ctrlFlags & RMCTRL_FLAGS_CACHEABLE)
+            rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_SKIP_COPYIN_ZERO_BUFFER;
     }
 
     //
@@ -574,24 +590,30 @@ _rmapiRmControl(NvHandle hClient, NvHandle hObject, NvU32 cmd, NvP64 pUserParams
         // Normal rmctrl request.
         //
 
-        if (rmapiCmdIsCacheable(cmd, NV_FALSE))
+        if (getCtrlInfoStatus == NV_OK)
         {
-            rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_SKIP_COPYIN;
-            rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_FORCE_SKIP_COPYOUT_ON_ERROR;
-
-            serverControlApiCopyIn(&g_resServ, &rmCtrlParams, rmCtrlParams.pCookie);
-            rmStatus = rmapiControlCacheGet(hClient, hObject, cmd, rmCtrlParams.pParams, paramsSize);
-            serverControlApiCopyOut(&g_resServ, &rmCtrlParams, rmCtrlParams.pCookie, rmStatus);
-
-            if (rmStatus == NV_OK)
+            if (rmapiControlIsCacheable(ctrlFlags, ctrlAccessRight, NV_FALSE))
             {
-                goto done;
-            }
-            else
-            {
-                // reset cookie if cache get failed
-                portMemSet(rmCtrlParams.pCookie, 0, sizeof(RS_CONTROL_COOKIE));
-                rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_SET_CONTROL_CACHE;
+                rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_FORCE_SKIP_COPYOUT_ON_ERROR;
+
+                serverControlApiCopyIn(&g_resServ, &rmCtrlParams, rmCtrlParams.pCookie);
+                rmStatus = rmapiControlCacheGet(hClient, hObject, cmd, rmCtrlParams.pParams, paramsSize);
+                serverControlApiCopyOut(&g_resServ, &rmCtrlParams, rmCtrlParams.pCookie, rmStatus);
+
+                if (rmStatus == NV_OK)
+                {
+                    goto done;
+                }
+                else
+                {
+                    // reset cookie if cache get failed
+                    portMemSet(rmCtrlParams.pCookie, 0, sizeof(RS_CONTROL_COOKIE));
+                    rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_SET_CONTROL_CACHE;
+
+                    // re-initialize the flag if it's cleaned
+                    if (ctrlFlags & RMCTRL_FLAGS_CACHEABLE)
+                        rmCtrlParams.pCookie->apiCopyFlags |= RMCTRL_API_COPY_FLAGS_SKIP_COPYIN_ZERO_BUFFER;
+                }
             }
         }
 
@@ -856,7 +878,7 @@ serverControlLookupLockFlags
             return NV_OK;
         }
 
-        if (pRmCtrlExecuteCookie->ctrlFlags & RMCTRL_FLAGS_API_LOCK_READONLY)
+        if (controlFlags & RMCTRL_FLAGS_API_LOCK_READONLY)
         {
             *pAccess = LOCK_ACCESS_READ;
         }
@@ -883,7 +905,7 @@ serverControlLookupLockFlags
         // we already own the GPUs Lock.
         //
         if  ((pLockInfo->state & RM_LOCK_STATES_GPUS_LOCK_ACQUIRED) ||
-             (pRmCtrlExecuteCookie->ctrlFlags & RMCTRL_FLAGS_NO_GPUS_LOCK) ||
+             (controlFlags & RMCTRL_FLAGS_NO_GPUS_LOCK) ||
              (pRmCtrlParams->flags & NVOS54_FLAGS_IRQL_RAISED) ||
              (pRmCtrlParams->flags & NVOS54_FLAGS_LOCK_BYPASS))
         {
@@ -892,7 +914,7 @@ serverControlLookupLockFlags
         }
         else
         {
-            if ((pRmCtrlExecuteCookie->ctrlFlags & RMCTRL_FLAGS_GPU_LOCK_DEVICE_ONLY) ||
+            if ((controlFlags & RMCTRL_FLAGS_GPU_LOCK_DEVICE_ONLY) ||
                 (g_resServ.bRouteToPhysicalLockBypass && bUseGspLockingMode))
             {
                 pLockInfo->flags |= RM_LOCK_FLAGS_NO_GPUS_LOCK;
@@ -904,7 +926,7 @@ serverControlLookupLockFlags
                 pLockInfo->flags &= ~RM_LOCK_FLAGS_GPU_GROUP_LOCK;
             }
 
-            if (pRmCtrlExecuteCookie->ctrlFlags & RMCTRL_FLAGS_GPU_LOCK_READONLY)
+            if (controlFlags & RMCTRL_FLAGS_GPU_LOCK_READONLY)
                 *pAccess = LOCK_ACCESS_READ;
         }
 

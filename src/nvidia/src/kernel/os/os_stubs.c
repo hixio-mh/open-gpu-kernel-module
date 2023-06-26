@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -140,58 +140,38 @@ NV_STATUS stubOsSimEscapeReadBuffer(OBJGPU *pGpu, const char *path, NvU32 Index,
     return NV_ERR_GENERIC;
 }
 
-NV_STATUS stubOsCallACPI_MXMX(OBJGPU *pGpu, NvU32 AcpiId, NvU8 *pInOut)
-{
-    STUB_CHECK(220);
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-NV_STATUS stubOsCallACPI_DDC(OBJGPU *pGpu, NvU32 ulAcpiId, NvU8 *pOut, NvU32 *size, NvBool bReadMultiBlock)
-{
-    STUB_CHECK(221);
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-NV_STATUS stubOsCallACPI_BCL(OBJGPU *pGpu, NvU32 acpiId, NvU32 *pOut, NvU16 *size)
+NV_STATUS osCallACPI_MXMX(OBJGPU *pGpu, NvU32 AcpiId, NvU8 *pInOut)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallACPI_ON(OBJGPU *pGpu, NvU32 uAcpiId)
+NV_STATUS osCallACPI_BCL(OBJGPU *pGpu, NvU32 acpiId, NvU32 *pOut, NvU16 *size)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallACPI_OFF(OBJGPU *pGpu, NvU32 uAcpiId)
+NV_STATUS osCallACPI_ON(OBJGPU *pGpu, NvU32 uAcpiId)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallACPI_NBPS(OBJGPU *pGpu, NvU8 *pOut, NvU32 *pOutSize)
-{
-    *pOutSize = 0;
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-NV_STATUS stubOsCallACPI_NBSL(OBJGPU *pGpu, NvU32 val)
+NV_STATUS osCallACPI_OFF(OBJGPU *pGpu, NvU32 uAcpiId)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallWMI_OPTM_GPUON(OBJGPU *pGpu)
+NV_STATUS osCallACPI_OPTM_GPUON(OBJGPU *pGpu)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallWMI_NVHG_GPUON(OBJGPU *pGpu, NvU32 *pInOut)
+NV_STATUS osCallACPI_NVHG_GPUON(OBJGPU *pGpu, NvU32 *pInOut)
 {
-    //STUB_CHECK(225);
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallWMI_NVHG_GPUOFF(OBJGPU *pGpu, NvU32 *pInOut)
+NV_STATUS osCallACPI_NVHG_GPUOFF(OBJGPU *pGpu, NvU32 *pInOut)
 {
-    //STUB_CHECK(226);
     return NV_ERR_NOT_SUPPORTED;
 }
 
@@ -219,46 +199,18 @@ NV_STATUS stubOsCallWMI_NVHG_DOS(OBJGPU *pGpu, NvU32 AcpiId, NvU32 *pInOut)
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallWMI_NVHG_ROM(OBJGPU *pGpu, NvU32 *pIn, NvU32 *pOut)
-{
-    //STUB_CHECK(231);
-    return NV_ERR_NOT_SUPPORTED;
-}
-
 NV_STATUS stubOsCallWMI_NVHG_DCS(OBJGPU *pGpu, NvU32 AcpiId, NvU32 *pInOut)
 {
     //STUB_CHECK(232);
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallWMI_DOD(OBJGPU *pGpu, NvU32 *pInOut, NvU32 *pOutSize)
-{
-    //STUB_CHECK(233);
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-
-NV_STATUS stubOsCallACPI_DSM(OBJGPU *pGpu, ACPI_DSM_FUNCTION  acpiDSMFunction, NvU32 NVHGDSMSubfunction, NvU32 *pInOut, NvU16 *size)
+NV_STATUS osCallACPI_MXID(OBJGPU *pGpu, NvU32 ulAcpiId, NvU32 *pInOut)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NV_STATUS stubOsCallACPI_MXDS(OBJGPU *pGpu, NvU32 ulAcpiId, NvU32 *pInOut)
-{
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-NV_STATUS stubOsCallACPI_MXDM(OBJGPU *pGpu, NvU32 ulAcpiId, NvU32 *pInOut)
-{
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-NV_STATUS stubOsCallACPI_MXID(OBJGPU *pGpu, NvU32 ulAcpiId, NvU32 *pInOut)
-{
-    return NV_ERR_NOT_SUPPORTED;
-}
-
-NV_STATUS stubOsCallACPI_LRST(OBJGPU *pGpu, NvU32 ulAcpiId, NvU32 *pInOut)
+NV_STATUS osCallACPI_LRST(OBJGPU *pGpu, NvU32 ulAcpiId, NvU32 *pInOut)
 {
     return NV_ERR_NOT_SUPPORTED;
 }
@@ -460,6 +412,23 @@ osTegraSocDsiPanelCleanup
 {
     return;
 }
+
+NV_STATUS
+osTegraSocHspSemaphoreAcquire
+(
+    NvU32 ownerId,
+    NvBool bAcquire,
+    NvU64 timeout
+)
+{
+    return NV_ERR_NOT_SUPPORTED;
+}
+
+NvBool
+osTegraSocGetHdcpEnabled(OS_GPU_INFO *pOsGpuInfo)
+{
+    return NV_TRUE;
+}
 #endif
 
 NV_STATUS
@@ -471,16 +440,6 @@ osTegraSocParseFixedModeTimings
 )
 {
     return NV_OK;
-}
-
-
-NV_STATUS osVgpuAllocVmbusEventDpc(void **ppArg1)
-{
-    return NV_OK;
-}
-
-void osVgpuScheduleVmbusEventDpc(void *pArg1, void *pArg2)
-{
 }
 
 NV_STATUS osLockPageableDataSection(RM_PAGEABLE_SECTION *pSection)
@@ -692,26 +651,15 @@ stubOsGetUefiVariable
     return NV_ERR_NOT_SUPPORTED;
 }
 
-NvU32 osGetDynamicPowerSupportMask(void)
-{
-    return 0;
-}
-
-void osUnrefGpuAccessNeeded(OS_GPU_INFO *pOsGpuInfo)
-{
-    return;
-}
-
-NV_STATUS osRefGpuAccessNeeded(OS_GPU_INFO *pOsGpuInfo)
-{
-    return NV_OK;
-}
-
-void osClientGcoffDisallowRefcount(
-    OS_GPU_INFO  *pArg1,
-    NvBool        arg2
+NV_STATUS
+osGetNvGlobalRegistryDword
+(
+    OBJGPU     *pGpu,
+    const char *pRegParmStr,
+    NvU32      *pData
 )
 {
+    return NV_ERR_NOT_SUPPORTED;
 }
 
 #if !RMCFG_FEATURE_PLATFORM_DCE /* dce_core_rm_clk_reset.c */ && \
@@ -829,16 +777,16 @@ osTegraSocPmUnpowergate
 {
     return NV_ERR_NOT_SUPPORTED;
 }
-#endif
 
-#if !(RMCFG_FEATURE_PLATFORM_UNIX) || \
-    (RMCFG_FEATURE_PLATFORM_UNIX && !RMCFG_FEATURE_TEGRA_SOC_NVDISPLAY)
 NvU32
 osTegraSocFuseRegRead(NvU32 addr)
 {
     return 0;
 }
+#endif
 
+#if !(RMCFG_FEATURE_PLATFORM_UNIX) || \
+    (RMCFG_FEATURE_PLATFORM_UNIX && !RMCFG_FEATURE_TEGRA_SOC_NVDISPLAY)
 NV_STATUS
 osTegraSocDpUphyPllInit(OS_GPU_INFO *pOsGpuInfo, NvU32 link_rate, NvU32 lanes)
 {
@@ -852,4 +800,5 @@ osTegraSocDpUphyPllDeInit(OS_GPU_INFO *pOsGpuInfo)
 }
 
 #endif
+
 

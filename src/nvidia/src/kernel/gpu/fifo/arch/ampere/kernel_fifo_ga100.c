@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -21,6 +21,9 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+// FIXME XXX
+#define NVOC_KERNEL_GRAPHICS_MANAGER_H_PRIVATE_ACCESS_ALLOWED
+
 #include "kernel/gpu/fifo/kernel_fifo.h"
 #include "kernel/gpu/fifo/kernel_channel_group_api.h"
 #include "kernel/gpu/fifo/kernel_channel_group.h"
@@ -33,19 +36,7 @@
 #include "published/ampere/ga100/dev_ram.h"
 #include "published/ampere/ga100/dev_ctrl.h"
 
-/**
- * @brief Translates between 2 engine values
- *
- * To iterate through a value for all engines call with inType of
- * ENGINE_INFO_TYPE_INVALID for 0 through fifoGetNumEngines().
- *
- * @param pGpu
- * @param pKernelFifo
- * @param[in] inType ENGINE_INFO_TYPE_*
- * @param[in] inVal
- * @param[in] outType ENGINE_INFO_TYPE_*
- * @param[out] pOutVal
- */
+
 NV_STATUS
 kfifoEngineInfoXlate_GA100
 (
@@ -146,29 +137,6 @@ kfifoChannelGroupGetLocalMaxSubcontext_GA100
     return kfifoChannelGroupGetLocalMaxSubcontext_GM107(pGpu, pKernelFifo,
                                                         pKernelChannelGroup,
                                                         bLegacyMode);
-}
-
-/*!
- * @brief Clear USERD memory
- */
-void
-kfifoSetupUserD_GA100
-(
-    KernelFifo *pKernelFifo,
-    NvU8       *pUserD
-)
-{
-    NV_ASSERT_OR_RETURN_VOID(pUserD != NULL);
-
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_PUT ),                  0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_GET ),                  0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_REF ),                  0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_PUT_HI ),               0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_TOP_LEVEL_GET ),        0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_TOP_LEVEL_GET_HI ),     0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_GET_HI ),               0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_GP_GET ),               0 );
-    MEM_WR32( pUserD + SF_OFFSET( NV_RAMUSERD_GP_PUT ),               0 );
 }
 
 /*!

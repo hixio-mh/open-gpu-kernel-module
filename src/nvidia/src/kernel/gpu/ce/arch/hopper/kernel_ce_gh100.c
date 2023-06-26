@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -31,6 +31,8 @@
 #include "published/hopper/gh100/dev_ce.h"
 #include "published/hopper/gh100/dev_xtl_ep_pcfg_gpu.h"
 
+#define NV_CE_INVALID_TOPO_IDX 0xFFFF
+
 // Defines for PCE-LCE mapping algorithm
 #define NV_CE_MAX_HSHUBS                  5
 #define NV_CE_LCE_MASK_INIT               0xFFFFFFFF
@@ -44,7 +46,103 @@
 #define NV_CE_NUM_PCES_NO_LINK_CASE       12
 #define NV_CE_MAX_PCE_PER_GRCE            2
 
+/*
+ * Table for setting the PCE2LCE mapping for WAR configs that cannot be implemented
+ * using the algorithm because the config does not conform to the algorithm's set
+ * of requirements/assumptions
+ */
+static NVLINK_CE_AUTO_CONFIG_TABLE nvLinkCeAutoConfigTable_GH100[] =
+{
+  //
+  // #systmem #max         #peers     Symmetric Switch         PCE-LCE                          GRCE       exposeCe
+  // links   (links/peer)             Config?   Config         Map                              Config     Mask
 
+  // Default minimal configuration - NOTE: do not add entrys before this
+  // Default is for CG1
+  {0x0,   0x0,    0x0,    NV_FALSE,    NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x6,0x4,0x6,0x4,0x6},  {0x4,0x6},  0x53},
+  {0x0,   0x0,    0x0,    NV_TRUE,    NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                       0x4,0x4,0x4,0x6,0x4,0x6,0x4,0x6},  {0x4,0x6},  0x53},
+
+  // Switch cases - Ranger mapping
+  {0x0,   0x12,   0x1,      NV_TRUE,    NV_TRUE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x6,0x4,0x6,0x4,0x6},  {0x4,0x6},  0x53},
+  {0x0,   0x6,    0x1,      NV_TRUE,    NV_TRUE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x6,0x4,0x6,0x4,0x6},  {0x4,0x6},  0x53},
+  // CG4 mapping
+  {0x0,   0x6,    0x3,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x6,    0x3,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x6,    0x2,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x6,    0x2,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x6,    0x1,      NV_TRUE,   NV_FALSE,   {0x4,0xF,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x6,    0x1,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x5,    0x3,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x5,    0x3,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x5,    0x2,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x5,    0x2,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x5,    0x1,      NV_TRUE,   NV_FALSE,   {0x4,0xF,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x5,    0x1,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x4,    0x3,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x4,    0x3,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x4,    0x2,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x4,    0x2,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x4,    0x1,      NV_TRUE,   NV_FALSE,   {0x4,0xF,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x4,    0x1,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x3,    0x3,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x3,    0x3,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x3,    0x2,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x3,    0x2,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x3,    0x1,      NV_TRUE,   NV_FALSE,   {0x4,0xF,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x3,    0x1,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x2,    0x3,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x2,    0x3,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x2,    0x2,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x2,    0x2,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x2,    0x1,      NV_TRUE,   NV_FALSE,   {0x4,0xF,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x2,    0x1,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x1,    0x3,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x1,    0x3,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0x8,0x4,0x8,0x4,0x8},  {0x4,0x6},  0x153},
+  {0x0,   0x1,    0x2,      NV_TRUE,   NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x1,    0x2,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0x6,0x4,0x6,0x4,0x6,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0x6},  0x53},
+  {0x0,   0x1,    0x1,      NV_TRUE,   NV_FALSE,   {0x4,0xF,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13},
+  {0x0,   0x1,    0x1,      NV_FALSE,  NV_FALSE,   {0x4,0x6,0x4,0xF,0x4,0xF,0x4,0xF,
+                                                        0x4,0x4,0x4,0xF,0x4,0xF,0x4,0xF},  {0x4,0xF},  0x13}
+};
 
 /*!
  * @brief Returns the size of the PCE2LCE register array
@@ -92,6 +190,63 @@ kceGetNumPceRequired
     }
 }
 
+/*
+ * Look up entry in NVLINK_CE_AUTO_CONFIG_TABLE
+ *
+ * @param[in]  pGpu                 OBJGPU pointer
+ * @param[in]  pCe                  OBJCE pointer
+ * @param[in]  pCurrentTopo         NVLINK_TOPOLOGY_INFO pointer
+ * @param[in]  pAutoConfigTable     NVLINK_CE_AUTO_CONFIG_TABLE pointer
+ * @param[in]  autoConfigNumEntries NvU32 num entries within pAutoConfigTable
+ * @param[out] pIdx                 NvU32 pointer
+ * @param[out] pExposeCeMask        NvU32 pointer
+ *
+ * Returns: NV_TRUE if entry is found
+ *        NV_FALSE otheriwse
+*/
+NvBool
+kceGetAutoConfigTableEntry_GH100
+(
+    OBJGPU                   *pGpu,
+    KernelCE                 *pKCe,
+    NVLINK_TOPOLOGY_PARAMS   *pCurrentTopo,
+    NVLINK_CE_AUTO_CONFIG_TABLE *pTable,
+    NvU32                    autoConfigNumEntries,
+    NvU32                   *pIdx,
+    NvU32                   *pExposeCeMask
+)
+{
+    NvU32 i;
+
+    //
+    // The auto config table entries will only be applicable
+    // from this function in SHH cases. Rather than
+    // introduced a new entry in the table to note SHH,
+    // in order to preserve backwards compatibility this
+    // function will only attempt to map if we are confirmed
+    // to be in SHH path.
+    //
+    if (!gpuIsSelfHosted(pGpu))
+    {
+        return NV_FALSE;
+    }
+
+    for (i = 0; i < autoConfigNumEntries; i++)
+    {
+        if ((pTable[i].sysmemLinks     == pCurrentTopo->sysmemLinks    ) &&
+            (pTable[i].maxLinksPerPeer == pCurrentTopo->maxLinksPerPeer) &&
+            (pTable[i].bSymmetric      == pCurrentTopo->bSymmetric     ) &&
+            (pTable[i].bSwitchConfig   == pCurrentTopo->bSwitchConfig  ) &&
+            (pTable[i].numPeers        == pCurrentTopo->numPeers       ))
+        {
+            *pIdx = i;
+            *pExposeCeMask = pTable[i].exposeCeMask;
+            return NV_TRUE;
+        }
+    }
+    return NV_FALSE;
+}
+
 /**
  * @brief This function returns the pceIndex for a particular link ID
  *        Must always be called with the hshub ID for the calling link ID
@@ -114,6 +269,12 @@ _ceGetAlgorithmPceIndex
 {
     NvU8 pHshubIdRequested;
     NvU32 i;
+
+    if ((pceIndex != NULL) && *pceIndex >= kceGetPce2lceConfigSize1_HAL(pKCe))
+    {
+        NV_PRINTF(LEVEL_ERROR, "Invalid PCE request. pceIndex = %d pceCnt = %d\n", *pceIndex, kceGetPce2lceConfigSize1_HAL(pKCe));
+        return;
+    }
 
     if (!(NVBIT32(*pceIndex) & pceAvailableMaskPerHshub[*pHshubId]))
     {
@@ -201,8 +362,11 @@ kceMapPceLceForC2C_GH100
             for (i = 0; i < selectPcePerHshub; i++)
             {
                 pceIndex = CE_GET_LOWEST_AVAILABLE_IDX(pceAvailableMaskPerHshub[hshubId]);
-                pceAvailableMaskPerHshub[hshubId] &= (~(NVBIT32(pceIndex)));
-                pLocalPceLceMap[pceIndex] = lceIndex;
+                if (pceIndex < kceGetPce2lceConfigSize1_HAL(pKCe))
+                {
+                    pceAvailableMaskPerHshub[hshubId] &= (~(NVBIT32(pceIndex)));
+                    pLocalPceLceMap[pceIndex] = lceIndex;
+                }
             }
         }
 
@@ -215,8 +379,11 @@ kceMapPceLceForC2C_GH100
             for (i = 0; i < selectPcePerHshub; i++)
             {
                 pceIndex = CE_GET_LOWEST_AVAILABLE_IDX(pceAvailableMaskPerHshub[hshubId]);
-                pceAvailableMaskPerHshub[hshubId] &= (~(NVBIT32(pceIndex)));
-                pLocalPceLceMap[pceIndex] = lceIndex;
+                if (pceIndex < kceGetPce2lceConfigSize1_HAL(pKCe))
+                {
+                    pceAvailableMaskPerHshub[hshubId] &= (~(NVBIT32(pceIndex)));
+                    pLocalPceLceMap[pceIndex] = lceIndex;
+                }
             }
         }
     }
@@ -472,6 +639,8 @@ kceMapPceLceForNvlinkPeers_GH100
    {
         NvU32 numLinksToPeer = knvlinkGetNumLinksToPeer(pGpu, pKernelNvlink,
                                                        pRemoteGpu);
+        NvU32 maxLceCnt = NV_CE_MAX_LCE_MASK;
+
         if (numLinksToPeer == 0)
         {
             continue;
@@ -494,12 +663,15 @@ kceMapPceLceForNvlinkPeers_GH100
 
         // Each peer gets 1 LCE
         lceIndex = CE_GET_LOWEST_AVAILABLE_IDX(peerAvailableLceMask);
-        lceMask |= NVBIT32(lceIndex);
+        HIGHESTBITIDX_32(maxLceCnt);
+        if (lceIndex < maxLceCnt)
+        {
+            lceMask |= NVBIT32(lceIndex);
+            // Clear out the chosen LCE
+            peerAvailableLceMask &= (~(NVBIT32(lceIndex)));
+        }
 
         pKCe->nvlinkNumPeers++;
-
-        // Clear out the chosen LCE
-        peerAvailableLceMask &= (~(NVBIT32(lceIndex)));
 
         peerLinkMask = knvlinkGetLinkMaskToPeer(pGpu, pKernelNvlink, pRemoteGpu);
         if (peerLinkMask == 0)
@@ -615,6 +787,7 @@ kceMapAsyncLceDefault_GH100
     NvU32 lceMask = 0;
     NvU32 pceMask = 0;
     NvU32 lceIndex, pceIndex, hshubId, i;
+    NvU32 maxLceCnt = NV_CE_MAX_LCE_MASK;
 
     peerAvailableLceMask = kceGetNvlinkPeerSupportedLceMask_HAL(pGpu, pKCe, peerAvailableLceMask);
     hshubId = 1;
@@ -626,9 +799,13 @@ kceMapAsyncLceDefault_GH100
     // Reference bug 3042556
     //
     lceIndex = CE_GET_LOWEST_AVAILABLE_IDX(peerAvailableLceMask);
-    lceMask |= NVBIT32(lceIndex);
-    // Clear out the chosen LCE
-    peerAvailableLceMask &= (~(NVBIT32(lceIndex)));
+    HIGHESTBITIDX_32(maxLceCnt);
+    if (lceIndex < maxLceCnt)
+    {
+        lceMask |= NVBIT32(lceIndex);
+        // Clear out the chosen LCE
+        peerAvailableLceMask &= (~(NVBIT32(lceIndex)));
+    }
 
     // Assign PCEs to this LCE based on input request
     for (i = 0; i < numDefaultPces; i++)
@@ -637,8 +814,11 @@ kceMapAsyncLceDefault_GH100
             hshubId++;
 
         pceIndex = CE_GET_LOWEST_AVAILABLE_IDX(pceAvailableMaskPerHshub[hshubId]);
-        pceMask |= NVBIT32(pceIndex);
-        pceAvailableMaskPerHshub[hshubId] &= (~(NVBIT32(pceIndex)));
+        if (pceIndex < kceGetPce2lceConfigSize1_HAL(pKCe))
+        {
+            pceMask |= NVBIT32(pceIndex);
+            pceAvailableMaskPerHshub[hshubId] &= (~(NVBIT32(pceIndex)));
+        }
     }
 
     FOR_EACH_INDEX_IN_MASK(32, pceIndex, pceMask)
@@ -670,6 +850,46 @@ kceGetMappings_GH100
     NV_STATUS    status         = NV_OK;
     NV_STATUS    statusC2C      = NV_OK;
     KernelNvlink *pKernelNvlink = GPU_GET_KERNEL_NVLINK(pGpu);
+    NvU32        topoIdx        = NV_CE_INVALID_TOPO_IDX;
+    NvBool       bEntryExists   = NV_FALSE;
+    NvU32        pce2lceConfigSize1 = kceGetPce2lceConfigSize1_HAL(pKCe);
+    NvU32        grceConfigSize1    = kceGetGrceConfigSize1_HAL(pKCe);
+    NvU32        pceIdx, grceIdx;
+
+    //
+    // In the self hosted case, utilize table entries
+    // with pre defined mappings. Calling from the parent would result in
+    // using the incorrect autoconfig table so instead set the necessary
+    // values here if config is found in the table.
+    //
+    if (gpuIsSelfHosted(pGpu) && !(pGpu->getProperty(pGpu, PDB_PROP_GPU_SKIP_TABLE_CE_MAP)))
+    {
+        bEntryExists = kceGetAutoConfigTableEntry_HAL(pGpu, pKCe, pTopoParams, nvLinkCeAutoConfigTable_GH100,
+                                                      NV_ARRAY_ELEMENTS(nvLinkCeAutoConfigTable_GH100),
+                                                      &topoIdx, pExposeCeMask);
+        if (bEntryExists)
+        {
+            // Since entry exists, fill local variables with the associated table entry
+            for (pceIdx = 0; pceIdx < pce2lceConfigSize1; pceIdx++)
+            {
+                pLocalPceLceMap[pceIdx] = nvLinkCeAutoConfigTable_GH100[topoIdx].pceLceMap[pceIdx];
+            }
+            for (grceIdx = 0; grceIdx < grceConfigSize1; grceIdx++)
+            {
+                pLocalGrceMap[grceIdx] = nvLinkCeAutoConfigTable_GH100[topoIdx].grceConfig[grceIdx];
+            }
+
+            pTopoParams->maxTopoIdx      = topoIdx;
+            pTopoParams->sysmemLinks     = nvLinkCeAutoConfigTable_GH100[topoIdx].sysmemLinks;
+            pTopoParams->maxLinksPerPeer = nvLinkCeAutoConfigTable_GH100[topoIdx].maxLinksPerPeer;
+            pTopoParams->numPeers        = nvLinkCeAutoConfigTable_GH100[topoIdx].numPeers;
+            pTopoParams->bSymmetric      = nvLinkCeAutoConfigTable_GH100[topoIdx].bSymmetric;
+            pTopoParams->bSwitchConfig   = nvLinkCeAutoConfigTable_GH100[topoIdx].bSwitchConfig;
+
+            return NV_OK;
+        }
+        
+    }
 
     //Prepare the per-HSHUB/FBHUB available PCE mask
     kceGetAvailableHubPceMask(pGpu, pTopoParams);

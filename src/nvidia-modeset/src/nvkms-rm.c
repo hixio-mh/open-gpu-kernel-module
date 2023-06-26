@@ -88,6 +88,8 @@
 
 #include "displayport/dpcd.h"
 
+#define NVKMS_SYNCPT_ID_INVALID     (0xFFFFFFFF)
+
 static NvU32 GetLegacyConnectorType(NVDispEvoPtr pDispEvo, NVDpyId dpyId);
 
 static void RmFreeEvoChannel(NVDevEvoPtr pDevEvo, NVEvoChannelPtr pChannel);
@@ -276,31 +278,31 @@ static NvBool QueryGpuCapabilities(NVDevEvoPtr pDevEvo)
 
 static void FreeDisplay(NVDispEvoPtr pDispEvo)
 {
-    NvU32 head;
-
     if (pDispEvo == NULL) {
         return;
     }
 
-    for (head = 0; head < ARRAY_LEN(pDispEvo->pSwapGroup); head++) {
+    nvAssert(pDispEvo->vrrSetTimeoutEventUsageCount == 0);
+    nvAssert(pDispEvo->vrrSetTimeoutEventHandle == 0);
+
 #if defined(DEBUG)
-        const NvU32 apiHead = nvHardwareHeadToApiHead(head);
+    for (NvU32 apiHead = 0;
+         apiHead < ARRAY_LEN(pDispEvo->pSwapGroup); apiHead++) {
         nvAssert(pDispEvo->pSwapGroup[apiHead] == NULL);
-#endif
-        nvAssert(nvListIsEmpty(&pDispEvo->headState[head].vblankCallbackList));
     }
+#endif
 
     nvAssert(nvListIsEmpty(&pDispEvo->dpyList));
 
     nvkms_free_ref_ptr(pDispEvo->ref_ptr);
 
+    nvInvalidateTopologiesEvo();
     nvFree(pDispEvo);
 }
 
 
 static inline NVDispEvoPtr AllocDisplay(NVDevEvoPtr pDevEvo)
 {
-    NvU32 head;
     NVDispEvoPtr pDispEvo = nvCalloc(1, sizeof(NVDispEvoRec));
 
     if (pDispEvo == NULL) {
@@ -315,10 +317,6 @@ static inline NVDispEvoPtr AllocDisplay(NVDevEvoPtr pDevEvo)
     pDispEvo->framelock.server = nvInvalidDpyId();
     pDispEvo->framelock.clients = nvEmptyDpyIdList();
     pDispEvo->framelock.currentServerHead = NV_INVALID_HEAD;
-
-    for (head = 0; head < ARRAY_LEN(pDispEvo->headState); head++) {
-        nvListInit(&pDispEvo->headState[head].vblankCallbackList);
-    }
 
     pDispEvo->ref_ptr = nvkms_alloc_ref_ptr(pDispEvo);
     if (!pDispEvo->ref_ptr) {
@@ -737,46 +735,6 @@ static NvBool AllocConnector(
 
     pConnectorEvo->dfpInfo = GetDfpInfo(pConnectorEvo);
 
-    /*
-     * Change-list 6909651 has disabled YCbCr* color space for DisplayPort, it
-     * says -
-     *   "Disable anything other than RGB for DisplayPort; on FERMI at least,
-     *   there are problems YCbCr* on DP (but not HDMI), since the limited range
-     *   must be implemented by EVO HW, and not the LUT (per EVO error checks)."
-     *
-     * TODO Investigate if YCbCr* color space for DisplayPort allowed on Kepler
-     * onward (also take DP-MST into consideration).
-     */
-    if (!nvConnectorUsesDPLib(pConnectorEvo)) {
-        /* check for color space (YCbCr422, YCbCr444) capability of GPU */
-        if (FLD_TEST_DRF(0073, _CTRL_DFP_FLAGS_FORMAT, _YCBCR422_CAPABLE, _TRUE,
-                         pConnectorEvo->dfpInfo)) {
-            pConnectorEvo->colorSpaceCaps.ycbcr422Capable = TRUE;
-        }
-
-        if (FLD_TEST_DRF(0073, _CTRL_DFP_FLAGS_FORMAT, _YCBCR444_CAPABLE, _TRUE,
-                         pConnectorEvo->dfpInfo)) {
-            pConnectorEvo->colorSpaceCaps.ycbcr444Capable = TRUE;
-        }
-    } else {
-        pConnectorEvo->colorSpaceCaps.ycbcr422Capable = FALSE;
-        pConnectorEvo->colorSpaceCaps.ycbcr444Capable = FALSE;
-    }
-
-    if (pConnectorEvo->signalFormat == NVKMS_CONNECTOR_SIGNAL_FORMAT_DSI) {
-        nvAssert(pDevEvo->numHeads >= 1);
-        // DSI supports only HEAD0 assignment
-        pConnectorEvo->validHeadMask = 0x1;
-
-        if (pConnectorEvo->type != NVKMS_CONNECTOR_TYPE_DSI) {
-            nvEvoLogDisp(pDispEvo, EVO_LOG_ERROR,
-                         "Mismatch between connector type and signal format for DSI!");
-            goto fail;
-        }
-    } else {
-        pConnectorEvo->validHeadMask = (1 << pDevEvo->numHeads) - 1;
-    }
-
     /* Assign connector indices. */
 
     pConnectorEvo->legacyType =
@@ -1176,11 +1134,11 @@ static void MarkConnectorBootHeadActive(NVDispEvoPtr pDispEvo, NvU32 head)
         } else {
             // Track the SOR assignment for this connector.  See the comment in
             // nvRmGetConnectorORInfo() for why this is deferred until now.
-            nvAssert(pConnectorEvo->or.mask == 0x0);
-            pConnectorEvo->or.mask |= NVBIT(params.index);
+            nvAssert(pConnectorEvo->or.primary == NV_INVALID_OR);
+            pConnectorEvo->or.primary = params.index;
         }
     }
-    nvAssert((pConnectorEvo->or.mask & NVBIT(params.index)) != 0x0);
+    nvAssert(pConnectorEvo->or.primary == params.index);
 
     pHeadState = &pDispEvo->headState[head];
 
@@ -2062,7 +2020,8 @@ void nvRmGetConnectorORInfo(NVConnectorEvoPtr pConnectorEvo, NvBool assertOnly)
             return;
         }
         pConnectorEvo->or.type = NV0073_CTRL_SPECIFIC_OR_TYPE_DAC;
-        pConnectorEvo->or.mask = 0;
+        pConnectorEvo->or.primary = NV_INVALID_OR;
+        pConnectorEvo->or.secondaryMask = 0;
         pConnectorEvo->or.protocol =
             NV0073_CTRL_SPECIFIC_OR_PROTOCOL_DAC_RGB_CRT;
         pConnectorEvo->or.ditherType = NV0073_CTRL_SPECIFIC_OR_DITHER_TYPE_OFF;
@@ -2085,9 +2044,11 @@ void nvRmGetConnectorORInfo(NVConnectorEvoPtr pConnectorEvo, NvBool assertOnly)
             //
             // All we really need to know is which SOR is assigned to the boot
             // display, so we defer the query to MarkConnectorBootHeadActive().
-            pConnectorEvo->or.mask = 0x0;
+            pConnectorEvo->or.secondaryMask = 0x0;
+            pConnectorEvo->or.primary = NV_INVALID_OR;
         } else {
-            pConnectorEvo->or.mask = NVBIT(params.index);
+            pConnectorEvo->or.secondaryMask = 0x0;
+            pConnectorEvo->or.primary = params.index;
         }
         pConnectorEvo->or.protocol = params.protocol;
         pConnectorEvo->or.ditherType = params.ditherType;
@@ -2095,7 +2056,7 @@ void nvRmGetConnectorORInfo(NVConnectorEvoPtr pConnectorEvo, NvBool assertOnly)
         pConnectorEvo->or.location = params.location;
     } else {
         nvAssert(pConnectorEvo->or.type == params.type);
-        nvAssert((pConnectorEvo->or.mask & NVBIT(params.index)) != 0x0);
+        nvAssert(pConnectorEvo->or.primary == params.index);
         nvAssert(pConnectorEvo->or.protocol == params.protocol);
         nvAssert(pConnectorEvo->or.ditherType == params.ditherType);
         nvAssert(pConnectorEvo->or.ditherAlgo == params.ditherAlgo);
@@ -2253,11 +2214,11 @@ NvBool nvRmSetDpmsEvo(NVDpyEvoPtr pDpyEvo, NvS64 value)
         NV5070_CTRL_CMD_SET_DAC_PWR_PARAMS powerParams = { { 0 }, 0 };
 
         powerParams.base.subdeviceIndex = pDispEvo->displayOwner;
-        if (pConnectorEvo->or.mask == 0x0) {
-            nvAssert(pConnectorEvo->or.mask != 0x0);
+        if (pConnectorEvo->or.primary == NV_INVALID_OR) {
+            nvAssert(pConnectorEvo->or.primary != NV_INVALID_OR);
             return FALSE;
         }
-        powerParams.orNumber = nvEvoConnectorGetPrimaryOr(pConnectorEvo);
+        powerParams.orNumber = pConnectorEvo->or.primary;
 
         switch (value) {
         case NV_KMS_DPY_ATTRIBUTE_DPMS_ON:
@@ -2622,24 +2583,6 @@ void nvRmFreeEvoDma(NVDevEvoPtr pDevEvo, NVEvoDmaPtr pDma)
     }
 }
 
-static void
-CompletionNotifierEventDeferredWork(void *dataPtr, NvU32 dataU32)
-{
-    NVEvoChannelPtr pChannel = dataPtr;
-
-    nvSendFlipOccurredEventEvo(pChannel->pb.pDevEvo, pChannel->channelMask);
-}
-
-static void CompletionNotifierEvent(void *arg, void *pEventDataVoid,
-                                    NvU32 hEvent, NvU32 Data, NV_STATUS Status)
-{
-  (void) nvkms_alloc_timer_with_ref_ptr(
-        CompletionNotifierEventDeferredWork, /* callback */
-        arg, /* argument (this is a ref_ptr to a pChannel) */
-        0,   /* dataU32 */
-        0);  /* timeout: schedule the work immediately */
-}
-
 /*****************************************************************************/
 /* RmAllocEvoChannel ()
  * Allocates the EVO channel and associated notifier surfaces and ctxdmas.
@@ -2793,30 +2736,6 @@ RmAllocEvoChannel(NVDevEvoPtr pDevEvo,
     buffer->pDevEvo      = pDevEvo;
     buffer->currentSubDevMask = SUBDEVICE_MASK_ALL;
 
-    if (!FLD_TEST_DRF64(_EVO, _CHANNEL_MASK, _CORE, _ENABLE, channelMask)) {
-        pChannel->ref_ptr = nvkms_alloc_ref_ptr(pChannel);
-
-        if (pChannel->ref_ptr == NULL) {
-            goto fail;
-        }
-
-        pChannel->completionNotifierEventHandle =
-            nvGenerateUnixRmHandle(&pDevEvo->handleAllocator);
-
-        if (!nvRmRegisterCallback(pDevEvo,
-                                  &pChannel->completionNotifierEventCallback,
-                                  pChannel->ref_ptr,
-                                  pChannel->pb.channel_handle,
-                                  pChannel->completionNotifierEventHandle,
-                                  CompletionNotifierEvent,
-                                  0)) {
-            nvFreeUnixRmHandle(&pDevEvo->handleAllocator,
-                               pChannel->completionNotifierEventHandle);
-            pChannel->completionNotifierEventHandle = 0;
-            goto fail;
-        }
-    }
-
     pChannel->imm.type = NV_EVO_IMM_CHANNEL_NONE;
 
     pDevEvo->hal->InitChannel(pDevEvo, pChannel);
@@ -2917,8 +2836,6 @@ static void RmFreeEvoChannel(NVDevEvoPtr pDevEvo, NVEvoChannelPtr pChannel)
 
         pChannel->completionNotifierEventHandle = 0;
     }
-
-    nvkms_free_ref_ptr(pChannel->ref_ptr);
 
     for (sd = 0; sd < pDevEvo->numSubDevices; sd++) {
         if (pChannel->pb.control[sd]) {
@@ -3176,6 +3093,9 @@ static NvBool AllocSyncpt(NVDevEvoPtr pDevEvo, NVEvoChannelPtr pChannel,
         return FALSE;
     }
 
+    /*! Set syncpt id to invalid to avoid un-intended Free */
+    pEvoSyncptOut->id = NVKMS_SYNCPT_ID_INVALID;
+
     /*
      * HW engine on Orin is called HOST1X, all syncpts are in internal RAM of
      * HOST1X.
@@ -3187,13 +3107,18 @@ static NvBool AllocSyncpt(NVDevEvoPtr pDevEvo, NVEvoChannelPtr pChannel,
         return FALSE;
     }
     id = params.alloc.id;
-    result = nvRmEvoAllocAndBindSyncpt(
-        pDevEvo, pChannel, id, &hSyncpt, &hSyncptCtxDma);
+
+    /* Post syncpt max val is tracked locally. Init the value here. */
+    params.read_minval.id = id;
+    result = nvkms_syncpt_op(NVKMS_SYNCPT_OP_READ_MINVAL, &params);
     if (!result) {
-        /*! put back syncpt as register failed */
-        params.put.id = id;
-        nvkms_syncpt_op(NVKMS_SYNCPT_OP_PUT, &params);
-        return FALSE;
+        goto failed;
+    }
+
+    result = nvRmEvoAllocAndBindSyncpt(pDevEvo, pChannel, id,
+                                       &hSyncpt, &hSyncptCtxDma);
+    if (!result) {
+        goto failed;
     }
 
     /*! Populate syncpt values to return. */
@@ -3201,7 +3126,15 @@ static NvBool AllocSyncpt(NVDevEvoPtr pDevEvo, NVEvoChannelPtr pChannel,
     pEvoSyncptOut->hCtxDma = hSyncptCtxDma;
     pEvoSyncptOut->hSyncpt = hSyncpt;
     pEvoSyncptOut->channelMask = pChannel->channelMask;
+    pEvoSyncptOut->syncptMaxVal = params.read_minval.minval;
+
     return TRUE;
+
+failed:
+    /*! put back syncpt as operation failed */
+    params.put.id = id;
+    nvkms_syncpt_op(NVKMS_SYNCPT_OP_PUT, &params);
+    return FALSE;
 }
 
 static NvBool AllocPostSyncptPerChannel(NVDevEvoPtr pDevEvo,
@@ -3217,7 +3150,7 @@ static NvBool AllocPostSyncptPerChannel(NVDevEvoPtr pDevEvo,
 NvBool nvRMAllocateWindowChannels(NVDevEvoPtr pDevEvo)
 {
     int index;
-    NvU32 window;
+    NvU32 window, sd;
 
     static const struct {
         NvU32 windowClass;
@@ -3256,6 +3189,18 @@ NvBool nvRMAllocateWindowChannels(NVDevEvoPtr pDevEvo)
 
         if (!pDevEvo->window[window]) {
             return FALSE;
+        }
+
+        for (sd = 0; sd < pDevEvo->numSubDevices; sd++) {
+            NvU32 ret = nvRmEvoBindDispContextDMA(pDevEvo,
+                                            pDevEvo->window[window],
+                                            pDevEvo->window[window]->notifiersDma[sd].ctxHandle);
+            if (ret != NVOS_STATUS_SUCCESS) {
+                nvEvoLogDev(pDevEvo, EVO_LOG_ERROR,
+                        "Failed to bind(window channel) display engine notify context DMA: 0x%x (%s)",
+                        ret, nvstatusToString(ret));
+                return FALSE;
+            }
         }
 
         if (!AllocImmediateChannelDma(pDevEvo, pDevEvo->window[window],
@@ -3345,7 +3290,7 @@ failed:
 }
 
 /* Pre-allocate the vblank syncpts, store in NVDispHeadStateEvoRec. */
-static void AllocCoreRGSyncpts(NVDevEvoPtr pDevEvo)
+void nvRmAllocCoreRGSyncpts(NVDevEvoPtr pDevEvo)
 {
 
     NVDispEvoPtr pDispEvo = NULL;
@@ -3361,21 +3306,22 @@ static void AllocCoreRGSyncpts(NVDevEvoPtr pDevEvo)
     pDispEvo = pDevEvo->pDispEvo[0];
 
     /* Initialize all heads' vblank sync object counts to zero. */
-    for (int i = 0; i < pDevEvo->numHeads; i++) {
-        pDispEvo->headState[i].numVblankSyncObjectsCreated = 0;
+    for (int i = 0; i < pDevEvo->numApiHeads; i++) {
+        pDispEvo->apiHeadState[i].numVblankSyncObjectsCreated = 0;
     }
 
     /* For each core RG syncpt index: */
     for (syncptIdx = 0; syncptIdx < NVKMS_MAX_VBLANK_SYNC_OBJECTS_PER_HEAD;
          syncptIdx++) {
         /* For each Head: */
-        for (int i = 0; i < pDevEvo->numHeads; i++) {
+        for (int i = 0; i < pDevEvo->numApiHeads; i++) {
             NvBool result = FALSE;
-            NVDispHeadStateEvoPtr pHeadState = &pDispEvo->headState[i];
+            NVDispApiHeadStateEvoRec *pApiHeadState =
+                &pDispEvo->apiHeadState[i];
 
             result =
                 AllocSyncpt(pDevEvo, pDevEvo->core,
-                            &pHeadState->vblankSyncObjects[syncptIdx].evoSyncpt);
+                            &pApiHeadState->vblankSyncObjects[syncptIdx].evoSyncpt);
             if (!result) {
                 /*
                  * Stop trying to allocate more syncpts if none are
@@ -3388,9 +3334,9 @@ static void AllocCoreRGSyncpts(NVDevEvoPtr pDevEvo)
             }
 
             /* Populate the index of the syncpt in the NVVblankSyncObjectRec. */
-            pHeadState->vblankSyncObjects[syncptIdx].index = syncptIdx;
+            pApiHeadState->vblankSyncObjects[syncptIdx].index = syncptIdx;
             /* Update the count. */
-            pHeadState->numVblankSyncObjectsCreated = syncptIdx + 1;
+            pApiHeadState->numVblankSyncObjectsCreated = syncptIdx + 1;
         }
     }
 }
@@ -3417,8 +3363,6 @@ NvBool nvRMSetupEvoCoreChannel(NVDevEvoPtr pDevEvo)
             return FALSE;
         }
     }
-
-    AllocCoreRGSyncpts(pDevEvo);
 
     nvInitEvoSubDevMask(pDevEvo);
 
@@ -3468,7 +3412,7 @@ void nvRMFreeWindowChannels(NVDevEvoPtr pDevEvo)
 }
 
 /* Frees the Core RG Syncpts. */
-static void FreeCoreRGSyncpts(NVDevEvoPtr pDevEvo)
+void nvRmFreeCoreRGSyncpts(NVDevEvoPtr pDevEvo)
 {
 
     NVDispEvoPtr pDispEvo = NULL;
@@ -3488,21 +3432,20 @@ static void FreeCoreRGSyncpts(NVDevEvoPtr pDevEvo)
     pDispEvo = pDevEvo->pDispEvo[0];
 
     /* For each Head: */
-    for (int i = 0; i < pDevEvo->numHeads; i++) {
+    for (int i = 0; i < pDevEvo->numApiHeads; i++) {
         /* Free all core RG syncpts. */
-        NVDispHeadStateEvoRec *pHeadState = &pDispEvo->headState[i];
-        for (int j = 0; j < pHeadState->numVblankSyncObjectsCreated; j++) {
+        NVDispApiHeadStateEvoRec *pApiHeadState = &pDispEvo->apiHeadState[i];
+        for (int j = 0; j < pApiHeadState->numVblankSyncObjectsCreated; j++) {
+            nvAssert(!pApiHeadState->vblankSyncObjects[j].inUse);
             nvRmEvoFreeSyncpt(pDevEvo,
-                              &pHeadState->vblankSyncObjects[j].evoSyncpt);
+                              &pApiHeadState->vblankSyncObjects[j].evoSyncpt);
         }
-        pHeadState->numVblankSyncObjectsCreated = 0;
+        pApiHeadState->numVblankSyncObjectsCreated = 0;
     }
 }
 
 void nvRMFreeEvoCoreChannel(NVDevEvoPtr pDevEvo)
 {
-    FreeCoreRGSyncpts(pDevEvo);
-
     if (pDevEvo->core != NULL) {
         EvoFreeCoreChannel(pDevEvo, pDevEvo->core);
         pDevEvo->core = NULL;
@@ -3794,7 +3737,8 @@ void nvRmEvoFreeSyncpt(
     NVDevEvoRec *pDevEvo,
     NVEvoSyncpt *pEvoSyncpt)
 {
-    if ((pEvoSyncpt == NULL) || !pDevEvo->supportsSyncpts) {
+    if ((pEvoSyncpt == NULL) || !pDevEvo->supportsSyncpts ||
+        (pEvoSyncpt->id == NVKMS_SYNCPT_ID_INVALID)) {
         return;
     }
 
@@ -5237,6 +5181,41 @@ NvBool nvRmSetGc6Allowed(NVDevEvoPtr pDevEvo, NvBool allowed)
     return TRUE;
 }
 
+typedef struct _NVRmRgLine1CallbackRec {
+    NVRgLine1CallbackRec base;
+    struct nvkms_ref_ptr *ref_ptr;
+    NvU32 rmHandle;
+    NVDispEvoRec *pDispEvo;
+    NvU32 head;
+} NVRmRgLine1CallbackRec;
+
+static void RGLine1ServiceInterrupt(void *dataPtr, NvU32 dataU32)
+{
+     NVRmRgLine1CallbackRec *pRmCallback = (NVRmRgLine1CallbackRec*)dataPtr;
+     pRmCallback->base.pCallbackProc(pRmCallback->pDispEvo, pRmCallback->head,
+                                     &pRmCallback->base);
+}
+
+/*!
+ * Receive RG line 1 interrupt notification from resman.
+ *
+ * This function is registered as the kernel callback function from resman when
+ * the RG line 1 interrupt is generated.
+ *
+ * This function is called within resman's context, so we schedule a zero timer
+ * callback to process the swapgroup check and release without holding the
+ * resman lock.
+ */
+static void RGLine1InterruptCallback(NvU32 rgIntrLine, void *param1,
+                                      NvBool bIsIrqlIsr /* unused */)
+{
+    (void) nvkms_alloc_timer_with_ref_ptr(
+        RGLine1ServiceInterrupt, /* callback */
+        param1, /* argument (this is a ref_ptr to a NVRmRgLine1CallbackRec*) */
+        0,  /* dataU32 */
+        0); /* usec */
+}
+
 /*!
  * Register an RM callback function for the RG line 1 interrupt.
  *
@@ -5246,38 +5225,40 @@ NvBool nvRmSetGc6Allowed(NVDevEvoPtr pDevEvo, NvBool allowed)
  *
  * \param[in]   pCallback         The callback function pointer to be registered
  *
- * \return      Handle to callback object on success, 0 on failure. This same
- *              handle must be used to unregister the callback.
+ * \return      Pointer to callback object on success, NULL on failure. This same
+ *              pointer must be used to unregister the callback.
  */
-NvU32 nvRmAddRgLine1Callback(
-    const NVDispEvoRec *pDispEvo,
-    NvU32 head,
-    NV0092_REGISTER_RG_LINE_CALLBACK_FN pCallback)
+NVRgLine1CallbackPtr
+nvRmAddRgLine1Callback(NVDispEvoRec *pDispEvo,
+                       NvU32 head,
+                       NVRgLine1CallbackProc pCallbackProc,
+                       void *pUserData)
 {
     NV0092_RG_LINE_CALLBACK_ALLOCATION_PARAMETERS rgLineParams = { 0 };
     NVDevEvoPtr pDevEvo = pDispEvo->pDevEvo;
     NvU32 handle = nvGenerateUnixRmHandle(&pDevEvo->handleAllocator);
     NvU32 ret;
+    NVRmRgLine1CallbackRec *pRmCallback = nvCalloc(1, sizeof(*pRmCallback));
+
+    if (pRmCallback == NULL) {
+        goto failed;
+    }
+
+    pRmCallback->ref_ptr = nvkms_alloc_ref_ptr(pRmCallback);
+    if (pRmCallback->ref_ptr == NULL) {
+        goto failed;
+    }
+    pRmCallback->base.pCallbackProc = pCallbackProc;
+    pRmCallback->base.pUserData = pUserData;
+    pRmCallback->rmHandle = handle;
+    pRmCallback->pDispEvo = pDispEvo;
+    pRmCallback->head = head;
 
     rgLineParams.subDeviceInstance = pDispEvo->displayOwner;
     rgLineParams.head = head;
     rgLineParams.rgLineNum = 1;
-    rgLineParams.pCallbkFn = pCallback;
-
-    /*
-     * This object only takes a single pointer, but we want it to operate
-     * on a {pDispEvo,head} tuple, but we want to allocate the callback
-     * in NVKMS using a ref_ptr to allow for the pDispEvo being freed while
-     * callbacks are outstanding, so we bundle pDispEvo->ref_ptr and head
-     * into a single value here before passing it to RM, then decouple them
-     * in the RM callback function before allocating the NVKMS timer callback.
-     *
-     * This works because pDispEvo->ref_ptr will never have the lowest 2
-     * bits set, and RM doesn't do anything with pCallbkParams aside from
-     * passing it back to the callback function.
-     */
-    nvAssert(!((NvUPtr)pDispEvo->ref_ptr & head));
-    rgLineParams.pCallbkParams = (void*)((NvUPtr)pDispEvo->ref_ptr | head);
+    rgLineParams.pCallbkFn = RGLine1InterruptCallback;
+    rgLineParams.pCallbkParams = pRmCallback->ref_ptr;
 
     ret = nvRmApiAlloc(nvEvoGlobal.clientHandle,
                        pDevEvo->displayCommonHandle,
@@ -5286,47 +5267,60 @@ NvU32 nvRmAddRgLine1Callback(
                        &rgLineParams);
 
     if (ret == NVOS_STATUS_SUCCESS) {
-        return handle;
-    } else {
-        nvEvoLogDevDebug(pDevEvo, EVO_LOG_ERROR,
-                         "Failed to enable RG line interrupt, ret: %d", ret);
-        nvFreeUnixRmHandle(&pDevEvo->handleAllocator, handle);
-        return 0;
+        return &pRmCallback->base;
     }
+
+    nvEvoLogDevDebug(pDevEvo, EVO_LOG_ERROR,
+                     "Failed to enable RG line interrupt, ret: %d", ret);
+    /* fall through */
+
+failed:
+    if (pRmCallback != NULL) {
+        nvkms_free_ref_ptr(pRmCallback->ref_ptr);
+        nvFree(pRmCallback);
+    }
+
+    nvFreeUnixRmHandle(&pDevEvo->handleAllocator, handle);
+
+    return NULL;
 }
 
 /*!
  * Unregister an RM callback function previously registered with
  * nvRmAddRgLine1Callback.
  *
- * \param[in]  pDispEvo                 The display on which to unregister the
- *                                      callback
+ * \param[in]  pDispEvo    The display on which to unregister the
+ *                         callback
  *
- * \param[in]  callbackObjectHandle     Handle to the previously allocated
- *                                      callback object
+ * \param[in]  pCallback   Pointer to the previously allocated
+ *                         callback object
  */
 void nvRmRemoveRgLine1Callback(const NVDispEvoRec *pDispEvo,
-                               NvU32 callbackObjectHandle)
+                               NVRgLine1CallbackPtr pCallback)
 {
+    NVRmRgLine1CallbackRec *pRmCallback;
     NVDevEvoPtr pDevEvo = pDispEvo->pDevEvo;
     NvU32 ret;
 
-    if (callbackObjectHandle == 0) {
+    if (pCallback == NULL) {
         nvEvoLogDevDebug(pDevEvo, EVO_LOG_ERROR,
-                         "Failed to disable RG line interrupt, obj handle 0");
+                         "Failed to disable RG line interrupt, obj pointer NULL");
         return;
     }
+    pRmCallback = nv_container_of(pCallback, NVRmRgLine1CallbackRec, base);
 
     ret = nvRmApiFree(nvEvoGlobal.clientHandle,
                       pDevEvo->displayCommonHandle,
-                      callbackObjectHandle);
+                      pRmCallback->rmHandle);
 
     if (ret != NVOS_STATUS_SUCCESS) {
         nvEvoLogDevDebug(pDevEvo, EVO_LOG_ERROR,
                          "Failed to disable RG line interrupt, ret: %d", ret);
     }
 
-    nvFreeUnixRmHandle(&pDevEvo->handleAllocator, callbackObjectHandle);
+    nvFreeUnixRmHandle(&pDevEvo->handleAllocator, pRmCallback->rmHandle);
+    nvkms_free_ref_ptr(pRmCallback->ref_ptr);
+    nvFree(pRmCallback);
 }
 
 /*!
@@ -5344,7 +5338,8 @@ void nvRmRemoveRgLine1Callback(const NVDispEvoRec *pDispEvo,
 NvU32 nvRmAddVBlankCallback(
     const NVDispEvoRec *pDispEvo,
     NvU32 head,
-    OSVBLANKCALLBACKPROC pCallback)
+    OSVBLANKCALLBACKPROC pCallback,
+    void *pParam2)
 {
     NVDevEvoPtr pDevEvo = pDispEvo->pDevEvo;
     const NvU32 sd = pDispEvo->displayOwner;
@@ -5355,12 +5350,7 @@ NvU32 nvRmAddVBlankCallback(
         .pProc       = pCallback,
         .LogicalHead = head,
         .pParm1      = pDispEvo->ref_ptr,
-
-        /*
-         * The callback's second argument is a pointer, which is large enough to
-         * store the head number.
-         */
-        .pParm2      = (void *)(NvUPtr)head,
+        .pParm2      = pParam2,
     };
 
     ret = nvRmApiAlloc(nvEvoGlobal.clientHandle,

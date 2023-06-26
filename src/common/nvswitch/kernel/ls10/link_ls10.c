@@ -121,8 +121,13 @@ nvswitch_init_lpwr_regs_ls10
     // IC Enter Threshold
     if (device->regkeys.lp_threshold == NV_SWITCH_REGKEY_SET_LP_THRESHOLD_DEFAULT)
     {
+        //
         // TODO: get from bios. Refer Bug 3626523 for more info.
-        lpEntryThreshold = 100;
+        //
+        // The threshold is measured in 100us unit. So lpEntryThreshold = 1
+        // means the threshold is set to 100us in the register.
+        //
+        lpEntryThreshold = 1;
     }
     else
     {
@@ -137,10 +142,9 @@ nvswitch_init_lpwr_regs_ls10
     bLpEnable = NV_TRUE;
     softwareDesired = (bLpEnable) ? 0x1 : 0x0;
 
-    // TO-DO: The write to the AN1 register is not working. The logic here needs to be re-visited.
-    tempRegVal = NVSWITCH_LINK_RD32_LS10(device, linkNum, NVLIPT_LNK, _NVLIPT_LNK, _CTRL_SYSTEM_LINK_AN1_CTRL);
-    tempRegVal = FLD_SET_DRF_NUM(_NVLIPT, _LNK_CTRL_SYSTEM_LINK_AN1_CTRL, _PWRM_L1_ENABLE, softwareDesired, tempRegVal);
-    NVSWITCH_LINK_WR32_LS10(device, linkNum, NVLIPT_LNK, _NVLIPT_LNK, _CTRL_SYSTEM_LINK_AN1_CTRL, tempRegVal);
+    tempRegVal = NVSWITCH_LINK_RD32_LS10(device, linkNum, NVLIPT_LNK, _NVLIPT_LNK, _PWRM_CTRL);
+    tempRegVal = FLD_SET_DRF_NUM(_NVLIPT, _LNK_PWRM_CTRL, _L1_SOFTWARE_DESIRED, softwareDesired, tempRegVal);
+    NVSWITCH_LINK_WR32_LS10(device, linkNum, NVLIPT_LNK, _NVLIPT_LNK, _PWRM_CTRL, tempRegVal);
 }
 
 void
@@ -496,34 +500,6 @@ nvswitch_corelib_get_rx_detect_ls10
     return NVL_SUCCESS;
 }
 
-static NvBool
-_nvswitch_is_tlc_in_reset
-(
-    nvswitch_device *device,
-    nvlink_link     *link
-)
-{
-    NvU32 clkStatus;
-
-    clkStatus = NVSWITCH_LINK_RD32_LS10(device, link->linkNumber,
-            NVLIPT_LNK, _NVLIPT_LNK, _CTRL_CLK_CTRL);
-
-    //
-    // TLC is in reset if any of the per-link clocks are off
-    // -- if TX and RX clocks are off then link is not powered on
-    // -- if TX/RX clocks are on but NCISOC clock is off, DL layer
-    //    is on but TLC is still off
-    //
-    if (FLD_TEST_DRF(_NVLIPT_LNK, _CTRL_CLK_CTRL, _RXCLK_STS, _OFF, clkStatus)      ||
-        FLD_TEST_DRF(_NVLIPT_LNK, _CTRL_CLK_CTRL, _TXCLK_STS, _OFF, clkStatus)      ||
-        FLD_TEST_DRF(_NVLIPT_LNK, _CTRL_CLK_CTRL, _NCISOCCLK_STS, _OFF, clkStatus))
-    {
-        return NV_TRUE;
-    }
-
-    return NV_FALSE;
-}
-
 void
 nvswitch_reset_persistent_link_hw_state_ls10
 (
@@ -531,8 +507,10 @@ nvswitch_reset_persistent_link_hw_state_ls10
     NvU32            linkNumber
 )
 {
+    NvU32 clocksMask = NVSWITCH_PER_LINK_CLOCK_SET(RXCLK)|NVSWITCH_PER_LINK_CLOCK_SET(TXCLK)|
+                            NVSWITCH_PER_LINK_CLOCK_SET(NCISOCCLK);
     nvlink_link *link = nvswitch_get_link(device, linkNumber);
-    if (nvswitch_is_link_in_reset(device, link))
+    if ((link == NULL) || nvswitch_is_link_in_reset(device, link))
     {
         return;
     }
@@ -541,7 +519,8 @@ nvswitch_reset_persistent_link_hw_state_ls10
     (void)nvswitch_minion_send_command(device, linkNumber, NV_MINION_NVLINK_DL_CMD_COMMAND_DLSTAT_CLR_DLERRCNT, 0);
 
     // If TLC is not up then return
-    if (_nvswitch_is_tlc_in_reset(device, link))
+
+    if (!nvswitch_are_link_clocks_on_ls10(device, link, clocksMask))
     {
         return;
     }
@@ -1105,6 +1084,29 @@ nvswitch_store_topology_information_ls10
 }
 
 void
+nvswitch_get_error_rate_threshold_ls10
+(
+    nvlink_link *link
+)
+{
+    nvswitch_device *device = link->dev->pDevInfo;
+    NvU32 linkNumber = link->linkNumber;
+    NvU32 crcRegVal;
+
+    crcRegVal = NVSWITCH_LINK_RD32_LS10(device, linkNumber, NVLDL, 
+                                         _NVLDL_RX, _ERROR_RATE_CTRL);
+
+    link->errorThreshold.thresholdMan = DRF_VAL(_NVLDL_RX, _ERROR_RATE_CTRL, _SHORT_THRESHOLD_MAN,
+                                                crcRegVal);
+    link->errorThreshold.thresholdExp = DRF_VAL(_NVLDL_RX, _ERROR_RATE_CTRL, _SHORT_THRESHOLD_EXP,
+                                                crcRegVal);
+    link->errorThreshold.timescaleMan = DRF_VAL(_NVLDL_RX, _ERROR_RATE_CTRL, _SHORT_TIMESCALE_MAN,
+                                                crcRegVal);
+    link->errorThreshold.timescaleExp = DRF_VAL(_NVLDL_RX, _ERROR_RATE_CTRL, _SHORT_TIMESCALE_EXP,
+                                                crcRegVal);
+}
+
+void
 nvswitch_set_error_rate_threshold_ls10
 (
     nvlink_link *link,
@@ -1156,7 +1158,6 @@ nvswitch_set_error_rate_threshold_ls10
         
         crcRegVal  &= ~shortRateMask;
         crcRegVal  |= crcShortRegkeyVal;
-
 
         link->errorThreshold.bUserConfig = NV_FALSE;
         link->errorThreshold.bInterruptTrigerred = NV_FALSE;
@@ -1255,12 +1256,29 @@ nvswitch_init_dlpl_interrupts_ls10
     NVSWITCH_LINK_WR32_LS10(device, linkNumber, NVLDL, _NVLDL_TOP, _INTR, 0xffffffff);
     NVSWITCH_LINK_WR32_LS10(device, linkNumber, NVLDL, _NVLDL_TOP, _INTR_SW2, 0xffffffff);
 
+    // Set the interrupt bits
+    nvswitch_set_dlpl_interrupts_ls10(link);
+
+    // Setup error rate thresholds
+    nvswitch_set_error_rate_threshold_ls10(link, NV_TRUE);
+    nvswitch_configure_error_rate_threshold_interrupt_ls10(link, NV_TRUE);
+}
+
+void
+nvswitch_set_dlpl_interrupts_ls10
+(
+    nvlink_link *link
+)
+{
+    nvswitch_device *device            = link->dev->pDevInfo;
+    NvU32            linkNumber        = link->linkNumber;
     // Stall tree routes to INTR_A which is connected to NVLIPT fatal tree
 
     NVSWITCH_LINK_WR32_LS10(device, linkNumber, NVLDL, _NVLDL_TOP, _INTR_STALL_EN,
               DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _TX_REPLAY, _DISABLE)               |
               DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _TX_RECOVERY_SHORT, _DISABLE)       |
               DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _LTSSM_FAULT_UP, _ENABLE)           |
+              DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _LTSSM_FAULT_DOWN, _ENABLE)         |
               DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _TX_FAULT_RAM, _ENABLE)             |
               DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _TX_FAULT_INTERFACE, _ENABLE)       |
               DRF_DEF(_NVLDL_TOP, _INTR_STALL_EN, _TX_FAULT_SUBLINK_CHANGE, _DISABLE) |
@@ -1287,9 +1305,6 @@ nvswitch_init_dlpl_interrupts_ls10
               DRF_DEF(_NVLDL_TOP, _INTR_NONSTALL_EN, _RX_CRC_COUNTER, _ENABLE)           |
               DRF_DEF(_NVLDL_TOP, _INTR_NONSTALL_EN, _LTSSM_PROTOCOL, _DISABLE)          |
               DRF_DEF(_NVLDL_TOP, _INTR_NONSTALL_EN, _MINION_REQUEST, _DISABLE));
-
-    nvswitch_set_error_rate_threshold_ls10(link, NV_TRUE);
-    nvswitch_configure_error_rate_threshold_interrupt_ls10(link, NV_TRUE);
 }
 
 static NvU32
@@ -1439,7 +1454,7 @@ nvswitch_execute_unilateral_link_shutdown_ls10
     NvU32 link_state_request;
     NvU32 link_state;
     NvU32 stat_data = 0;
-    NvU32 link_intr_subcode = 0;
+    NvU32 link_intr_subcode = MINION_OK;
 
     if (!NVSWITCH_IS_LINK_ENG_VALID_LS10(device, NVLDL, link->linkNumber))
     {
@@ -1476,7 +1491,6 @@ nvswitch_execute_unilateral_link_shutdown_ls10
                           NV_NVLSTAT_MN00, 0, &stat_data) == NVL_SUCCESS)
         {
             link_intr_subcode = DRF_VAL(_NVLSTAT, _MN00, _LINK_INTR_SUBCODE, stat_data);
-        }
 
         if ((link_state == NV_NVLIPT_LNK_CTRL_LINK_STATE_REQUEST_STATUS_MINION_REQUEST_FAIL) &&
             (link_intr_subcode == MINION_ALARM_BUSY))
@@ -1494,6 +1508,13 @@ nvswitch_execute_unilateral_link_shutdown_ls10
         {
             break;
         }
+        }
+        else
+        {
+            // Querying MINION for link_intr_subcode failed so retry
+            retry_count--;
+        }
+
 
     } while (retry_count);
 
@@ -1516,7 +1537,7 @@ nvswitch_reset_and_train_link_ls10
     NvU32      link_state_request;
     NvU32      link_state;
     NvU32      stat_data;
-    NvU32      link_intr_subcode;
+    NvU32      link_intr_subcode = MINION_OK;
 
     nvswitch_execute_unilateral_link_shutdown_ls10(link);
     nvswitch_corelib_clear_link_state_ls10(link);
@@ -1543,7 +1564,6 @@ nvswitch_reset_and_train_link_ls10
                               NV_NVLSTAT_MN00, 0, &stat_data) == NVL_SUCCESS)
             {
                 link_intr_subcode = DRF_VAL(_NVLSTAT, _MN00, _LINK_INTR_SUBCODE, stat_data);
-            }
 
             if ((link_state == NV_NVLIPT_LNK_CTRL_LINK_STATE_REQUEST_STATUS_MINION_REQUEST_FAIL) &&
                 (link_intr_subcode == MINION_ALARM_BUSY))
@@ -1561,6 +1581,12 @@ nvswitch_reset_and_train_link_ls10
             else
             {
                 break;
+            }
+        }
+            else
+            {
+                // failed to query minion for the link_intr_subcode so retry
+                retry_count--;
             }
         }
     } while(retry_count);
@@ -1583,3 +1609,72 @@ nvswitch_reset_and_train_link_ls10
     return NVL_SUCCESS;
 }
 
+NvBool
+nvswitch_are_link_clocks_on_ls10
+(
+    nvswitch_device *device,
+    nvlink_link *link,
+    NvU32 clocksMask
+)
+{
+    NvU32  clockStatus;
+    NvU32  clk;
+    NvBool bIsOff = NV_FALSE;
+
+    clockStatus = NVSWITCH_LINK_RD32_LS10(device, link->linkNumber,
+                    NVLIPT_LNK, _NVLIPT_LNK, _CTRL_CLK_CTRL);
+
+    FOR_EACH_INDEX_IN_MASK(32, clk, clocksMask)
+    {
+        switch(clk)
+        {
+            case NVSWITCH_PER_LINK_CLOCK_RXCLK:
+            {
+                bIsOff = FLD_TEST_DRF(_NVLIPT_LNK, _CTRL_CLK_CTRL, _RXCLK_STS, _OFF, clockStatus);
+                break;
+            }
+            case NVSWITCH_PER_LINK_CLOCK_TXCLK:
+            {
+                bIsOff = FLD_TEST_DRF(_NVLIPT_LNK, _CTRL_CLK_CTRL, _TXCLK_STS, _OFF, clockStatus);
+                break;
+            }
+            case NVSWITCH_PER_LINK_CLOCK_NCISOCCLK:
+            {
+                bIsOff = FLD_TEST_DRF(_NVLIPT_LNK, _CTRL_CLK_CTRL, _NCISOCCLK_STS, _OFF, clockStatus);
+                break;
+            }
+            default:
+                return NV_FALSE;
+        }
+
+        if (bIsOff)
+        {
+            return NV_FALSE;
+        }
+    }
+    FOR_EACH_INDEX_IN_MASK_END;
+
+    return NV_TRUE;
+}
+
+NvBool
+nvswitch_does_link_need_termination_enabled_ls10
+(
+    nvswitch_device *device,
+    nvlink_link *link
+)
+{
+    // Not defined for LS10
+    return NV_FALSE;
+}
+
+NvlStatus
+nvswitch_link_termination_setup_ls10
+(
+    nvswitch_device *device,
+    nvlink_link* link
+)
+{
+    // Not supported for LS10
+    return -NVL_ERR_NOT_SUPPORTED;
+}

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -104,6 +104,7 @@ static void printCaps(OBJGPU *pGpu, KernelCE *pKCe, RM_ENGINE_TYPE rmEngineType,
     PRINT_CAP(_CE_SUPPORTS_NONPIPELINED_BL);
     PRINT_CAP(_CE_SUPPORTS_PIPELINED_BL);
 
+    PRINT_CAP(_CE_CC_SECURE);
 }
 
 void kceGetNvlinkCaps(OBJGPU *pGpu, KernelCE *pKCe, NvU8 *pKCeCaps)
@@ -220,7 +221,7 @@ NV_STATUS kceUpdateClassDB_KERNEL(OBJGPU *pGpu, KernelCE *pKCe)
 {
     RM_API *pRmApi     = GPU_GET_PHYSICAL_RMAPI(pGpu);
 
-    NV2080_CTRL_CE_UPDATE_CLASS_DB_PARAMS params;
+    NV2080_CTRL_CE_UPDATE_CLASS_DB_PARAMS params = {0};
 
     NV_STATUS status = pRmApi->Control(pRmApi,
                              pGpu->hInternalClient,
@@ -335,7 +336,7 @@ NV_STATUS kceTopLevelPceLceMappingsUpdate_IMPL(OBJGPU *pGpu, KernelCE *pKCe)
     // Set bUpdateNvlinkPceLce to auto-config status
     bUpdateNvlinkPceLce = pKCe->bIsAutoConfigEnabled;
 
-    if (bUpdateNvlinkPceLce)
+    if (bUpdateNvlinkPceLce || IS_SILICON(pGpu))
     {
         status = kceGetNvlinkAutoConfigCeValues_HAL(pGpu, pKCe, pceLceMap,
                                                grceConfig, &exposeCeMask);
@@ -372,7 +373,7 @@ NV_STATUS kceTopLevelPceLceMappingsUpdate_IMPL(OBJGPU *pGpu, KernelCE *pKCe)
     // exposeCeMask will be 0x0 when bUpdateNvlinkPceLce is NV_FALSE.
     //
     RM_API *pRmApi = GPU_GET_PHYSICAL_RMAPI(pGpu);
-    NV2080_CTRL_CE_UPDATE_PCE_LCE_MAPPINGS_PARAMS params;
+    NV2080_CTRL_CE_UPDATE_PCE_LCE_MAPPINGS_PARAMS params = {0};
 
     if (bUpdateNvlinkPceLce)
     {
@@ -418,7 +419,7 @@ NV_STATUS kceTopLevelPceLceMappingsUpdate_IMPL(OBJGPU *pGpu, KernelCE *pKCe)
 NV_STATUS kceGetFaultMethodBufferSize_IMPL(OBJGPU *pGpu, NvU32 *size)
 {
     RM_API *pRmApi = GPU_GET_PHYSICAL_RMAPI(pGpu);
-    NV2080_CTRL_CE_GET_FAULT_METHOD_BUFFER_SIZE_PARAMS params;
+    NV2080_CTRL_CE_GET_FAULT_METHOD_BUFFER_SIZE_PARAMS params = {0};
 
     NV_ASSERT_OK_OR_RETURN(pRmApi->Control(pRmApi, pGpu->hInternalClient, pGpu->hInternalSubdevice,
             NV2080_CTRL_CMD_CE_GET_FAULT_METHOD_BUFFER_SIZE, &params, sizeof(params)));
@@ -444,7 +445,7 @@ kceGetAvailableHubPceMask_IMPL
 )
 {
     RM_API *pRmApi = GPU_GET_PHYSICAL_RMAPI(pGpu);
-    NV2080_CTRL_CE_GET_HUB_PCE_MASK_PARAMS params;
+    NV2080_CTRL_CE_GET_HUB_PCE_MASK_PARAMS params = {0};
 
     NV_ASSERT_OR_RETURN(pTopoParams != NULL, NV_ERR_INVALID_ARGUMENT);
     ct_assert(NV_ARRAY_ELEMENTS(pTopoParams->pceAvailableMaskPerHshub) == NV_ARRAY_ELEMENTS(params.hshubPceMasks));

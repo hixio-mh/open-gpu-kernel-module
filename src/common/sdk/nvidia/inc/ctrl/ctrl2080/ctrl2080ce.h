@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2014-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,7 +27,7 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl2080/ctrl2080ce.finn
+// Source file:      ctrl/ctrl2080/ctrl2080ce.finn
 //
 
 
@@ -98,8 +98,7 @@ typedef struct NV2080_CTRL_CE_GET_CAPS_V2_PARAMS {
 #define NV2080_CTRL_CE_CAPS_CE_BL_SIZE_GT_64K_SUPPORTED      0:0x80
 #define NV2080_CTRL_CE_CAPS_CE_SUPPORTS_NONPIPELINED_BL      1:0x01
 #define NV2080_CTRL_CE_CAPS_CE_SUPPORTS_PIPELINED_BL         1:0x02
-
-
+#define NV2080_CTRL_CE_CAPS_CE_CC_SECURE                     1:0x04
 
 /*
  *   NV2080_CTRL_CE_CAPS_CE_GRCE
@@ -133,9 +132,10 @@ typedef struct NV2080_CTRL_CE_GET_CAPS_V2_PARAMS {
  *
  *   NV2080_CTRL_CE_CAPS_CE_SUPPORTS_PIPELINED_BL
  *     Set if the CE supports pipelined Block Linear
+ *
+ *   NV2080_CTRL_CE_CAPS_CE_CC_SECURE
+ *     Set if the CE is capable of encryption/decryption
  */
-
-
 
 /*
  * NV2080_CTRL_CMD_CE_GET_CE_PCE_MASK
@@ -228,6 +228,8 @@ typedef struct NV2080_CTRL_CE_SET_PCE_LCE_CONFIG_PARAMS {
  *   NV_ERR_GENERIC
  */
 
+
+
 #define NV2080_CTRL_CMD_CE_UPDATE_PCE_LCE_MAPPINGS (0x20802a05) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_CE_INTERFACE_ID << 8) | NV2080_CTRL_CE_UPDATE_PCE_LCE_MAPPINGS_PARAMS_MESSAGE_ID" */
 
 #define NV2080_CTRL_CE_UPDATE_PCE_LCE_MAPPINGS_PARAMS_MESSAGE_ID (0x5U)
@@ -269,7 +271,11 @@ typedef struct NV2080_CTRL_CE_UPDATE_CLASS_DB_PARAMS {
  *
  */
 
-#define NV2080_CTRL_CMD_CE_GET_PHYSICAL_CAPS (0x20802a07) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_CE_INTERFACE_ID << 8) | 0x7" */
+#define NV2080_CTRL_CMD_CE_GET_PHYSICAL_CAPS (0x20802a07) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_CE_INTERFACE_ID << 8) | NV2080_CTRL_CE_GET_PHYSICAL_CAPS_PARAMS_MESSAGE_ID" */
+
+#define NV2080_CTRL_CE_GET_PHYSICAL_CAPS_PARAMS_MESSAGE_ID (0x7U)
+
+typedef NV2080_CTRL_CE_GET_CAPS_V2_PARAMS NV2080_CTRL_CE_GET_PHYSICAL_CAPS_PARAMS;
 
 #define NV2080_CTRL_CE_GET_FAULT_METHOD_BUFFER_SIZE_PARAMS_MESSAGE_ID (0x8U)
 
@@ -292,7 +298,7 @@ typedef struct NV2080_CTRL_CE_GET_FAULT_METHOD_BUFFER_SIZE_PARAMS {
 
 #define NV2080_CTRL_CMD_CE_GET_HUB_PCE_MASK             (0x20802a09) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_CE_INTERFACE_ID << 8) | NV2080_CTRL_CE_GET_HUB_PCE_MASK_PARAMS_MESSAGE_ID" */
 
-#define NV2080_CTRL_CE_MAX_HSHUBS                       5
+#define NV2080_CTRL_CE_MAX_HSHUBS                       32
 
 #define NV2080_CTRL_CE_GET_HUB_PCE_MASK_PARAMS_MESSAGE_ID (0x9U)
 
@@ -324,6 +330,12 @@ typedef struct NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS {
     NvU32 present;
 } NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS;
 
-#define NV2080_CTRL_CMD_CE_GET_ALL_PHYSICAL_CAPS (0x20802a0b) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_CE_INTERFACE_ID << 8) | 0xb" */
+#define NV2080_CTRL_CMD_CE_GET_ALL_PHYSICAL_CAPS (0x20802a0b) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_CE_INTERFACE_ID << 8) | NV2080_CTRL_CE_GET_ALL_PHYSICAL_CAPS_PARAMS_MESSAGE_ID" */
+
+#define NV2080_CTRL_CE_GET_ALL_PHYSICAL_CAPS_PARAMS_MESSAGE_ID (0xbU)
+
+typedef NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS NV2080_CTRL_CE_GET_ALL_PHYSICAL_CAPS_PARAMS;
+
+
 
 /* _ctrl2080ce_h_ */

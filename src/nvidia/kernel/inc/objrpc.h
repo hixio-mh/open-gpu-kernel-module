@@ -45,7 +45,11 @@ typedef struct _object_vgpu OBJVGPU, *POBJVGPU;
 #include "g_rpc_hal.h" // For RPC_HAL_IFACES
 #include "g_rpc_odb.h" // For RPC_HAL_IFACES
 
+#define RPC_TIMEOUT_LIMIT_PRINT_RATE_THRESH 3  // rate limit after 3 prints
+#define RPC_TIMEOUT_LIMIT_PRINT_RATE_SKIP   29 // skip 29 of 30 prints
+
 #define RPC_HISTORY_DEPTH 8
+
 typedef struct RpcHistoryEntry
 {
     NvU32 function;
@@ -70,16 +74,13 @@ struct OBJRPC{
     NvU32 *message_buffer_priv_uvm;
     MEMORY_DESCRIPTOR *pMemDesc_mesg_uvm;
 
-    // Buffer for initial GSP message.
-    void       *init_msg_buf;
-    RmPhysAddr  init_msg_buf_pa;
-
     /* Message Queue */
     struct _message_queue_info *pMessageQueueInfo;
-    RmPhysAddr                  messageQueuePhysMem;
 
     RpcHistoryEntry rpcHistory[RPC_HISTORY_DEPTH];
     NvU32 rpcHistoryCurrent;
+    NvU32 timeoutCount;
+    NvBool bQuietPrints;
 
 };
 
@@ -104,7 +105,6 @@ NV_STATUS freeRpcInfrastructure_VGPU(OBJGPU *pGpu);
 OBJRPC *initRpcObject(OBJGPU *pGpu);
 void rpcSetIpVersion(OBJGPU *pGpu, OBJRPC *pRpc, NvU32 ipVersion);
 void rpcObjIfacesSetup(OBJRPC *pRpc);
-void rpcRmApiSetup(OBJGPU *pGpu);
 NV_STATUS rpcWriteCommonHeader(OBJGPU *pGpu, OBJRPC *pRpc, NvU32 func, NvU32 paramLength);
 NV_STATUS rpcWriteCommonHeaderSim(OBJGPU *pGpu);
 NV_STATUS _allocRpcMemDesc(OBJGPU *pGpu, NvU64 size, NvBool bContig, NV_ADDRESS_SPACE addrSpace, MEMORY_DESCRIPTOR **ppMemDesc, void **ppMemBuffer, void **ppMemBufferPriv);

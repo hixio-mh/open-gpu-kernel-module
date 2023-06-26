@@ -78,10 +78,6 @@ static NV_STATUS __nvoc_thunk_KernelMIGManager_engstateStateUnload(OBJGPU *arg0,
     return kmigmgrStateUnload(arg0, (struct KernelMIGManager *)(((unsigned char *)arg1) - __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), flags);
 }
 
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrReconcileTunableState(POBJGPU pGpu, struct KernelMIGManager *pEngstate, void *pTunableState) {
-    return engstateReconcileTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), pTunableState);
-}
-
 static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrStateLoad(POBJGPU pGpu, struct KernelMIGManager *pEngstate, NvU32 arg0) {
     return engstateStateLoad(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), arg0);
 }
@@ -118,28 +114,8 @@ static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrStatePreInitUnlocked(POBJGPU pG
     return engstateStatePreInitUnlocked(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset));
 }
 
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrGetTunableState(POBJGPU pGpu, struct KernelMIGManager *pEngstate, void *pTunableState) {
-    return engstateGetTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), pTunableState);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrCompareTunableState(POBJGPU pGpu, struct KernelMIGManager *pEngstate, void *pTunables1, void *pTunables2) {
-    return engstateCompareTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), pTunables1, pTunables2);
-}
-
-static void __nvoc_thunk_OBJENGSTATE_kmigmgrFreeTunableState(POBJGPU pGpu, struct KernelMIGManager *pEngstate, void *pTunableState) {
-    engstateFreeTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), pTunableState);
-}
-
 static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrStatePostLoad(POBJGPU pGpu, struct KernelMIGManager *pEngstate, NvU32 arg0) {
     return engstateStatePostLoad(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), arg0);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrAllocTunableState(POBJGPU pGpu, struct KernelMIGManager *pEngstate, void **ppTunableState) {
-    return engstateAllocTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), ppTunableState);
-}
-
-static NV_STATUS __nvoc_thunk_OBJENGSTATE_kmigmgrSetTunableState(POBJGPU pGpu, struct KernelMIGManager *pEngstate, void *pTunableState) {
-    return engstateSetTunableState(pGpu, (struct OBJENGSTATE *)(((unsigned char *)pEngstate) + __nvoc_rtti_KernelMIGManager_OBJENGSTATE.offset), pTunableState);
 }
 
 static NvBool __nvoc_thunk_OBJENGSTATE_kmigmgrIsPresent(POBJGPU pGpu, struct KernelMIGManager *pEngstate) {
@@ -209,23 +185,20 @@ static void __nvoc_init_funcTable_KernelMIGManager_1(KernelMIGManager *pThis, Rm
     {
         pThis->__kmigmgrCreateGPUInstanceCheck__ = &kmigmgrCreateGPUInstanceCheck_GA100;
     }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0fbe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
+    else
     {
         pThis->__kmigmgrCreateGPUInstanceCheck__ = &kmigmgrCreateGPUInstanceCheck_46f6a7;
     }
 
     // Hal function -- kmigmgrIsDevinitMIGBitSet
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x00000400UL) )) /* ChipHal: GA100 */ 
     {
-        if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x00000400UL) )) /* ChipHal: GA100 */ 
-        {
-            pThis->__kmigmgrIsDevinitMIGBitSet__ = &kmigmgrIsDevinitMIGBitSet_GA100;
-        }
-        // default
-        else
-        {
-            pThis->__kmigmgrIsDevinitMIGBitSet__ = &kmigmgrIsDevinitMIGBitSet_491d52;
-        }
+        pThis->__kmigmgrIsDevinitMIGBitSet__ = &kmigmgrIsDevinitMIGBitSet_GA100;
+    }
+    // default
+    else
+    {
+        pThis->__kmigmgrIsDevinitMIGBitSet__ = &kmigmgrIsDevinitMIGBitSet_491d52;
     }
 
     // Hal function -- kmigmgrIsGPUInstanceCombinationValid
@@ -263,7 +236,7 @@ static void __nvoc_init_funcTable_KernelMIGManager_1(KernelMIGManager *pThis, Rm
     {
         pThis->__kmigmgrIsMemoryPartitioningRequested__ = &kmigmgrIsMemoryPartitioningRequested_GA100;
     }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0fbe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
+    else
     {
         pThis->__kmigmgrIsMemoryPartitioningRequested__ = &kmigmgrIsMemoryPartitioningRequested_491d52;
     }
@@ -273,22 +246,19 @@ static void __nvoc_init_funcTable_KernelMIGManager_1(KernelMIGManager *pThis, Rm
     {
         pThis->__kmigmgrIsMemoryPartitioningNeeded__ = &kmigmgrIsMemoryPartitioningNeeded_GA100;
     }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0fbe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
+    else
     {
         pThis->__kmigmgrIsMemoryPartitioningNeeded__ = &kmigmgrIsMemoryPartitioningNeeded_491d52;
     }
 
     // Hal function -- kmigmgrMemSizeFlagToSwizzIdRange
-    if (( ((rmVariantHal_HalVarIdx >> 5) == 0UL) && ((1UL << (rmVariantHal_HalVarIdx & 0x1f)) & 0x00000002UL) )) /* RmVariantHal: PF_KERNEL_ONLY */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000400UL) )) /* ChipHal: GA100 | GH100 */ 
     {
-        if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000400UL) )) /* ChipHal: GA100 | GH100 */ 
-        {
-            pThis->__kmigmgrMemSizeFlagToSwizzIdRange__ = &kmigmgrMemSizeFlagToSwizzIdRange_GA100;
-        }
-        else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0fbe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-        {
-            pThis->__kmigmgrMemSizeFlagToSwizzIdRange__ = &kmigmgrMemSizeFlagToSwizzIdRange_d64cd6;
-        }
+        pThis->__kmigmgrMemSizeFlagToSwizzIdRange__ = &kmigmgrMemSizeFlagToSwizzIdRange_GA100;
+    }
+    else
+    {
+        pThis->__kmigmgrMemSizeFlagToSwizzIdRange__ = &kmigmgrMemSizeFlagToSwizzIdRange_d64cd6;
     }
 
     pThis->__nvoc_base_OBJENGSTATE.__engstateConstructEngine__ = &__nvoc_thunk_KernelMIGManager_engstateConstructEngine;
@@ -296,8 +266,6 @@ static void __nvoc_init_funcTable_KernelMIGManager_1(KernelMIGManager *pThis, Rm
     pThis->__nvoc_base_OBJENGSTATE.__engstateStateInitLocked__ = &__nvoc_thunk_KernelMIGManager_engstateStateInitLocked;
 
     pThis->__nvoc_base_OBJENGSTATE.__engstateStateUnload__ = &__nvoc_thunk_KernelMIGManager_engstateStateUnload;
-
-    pThis->__kmigmgrReconcileTunableState__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrReconcileTunableState;
 
     pThis->__kmigmgrStateLoad__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrStateLoad;
 
@@ -317,17 +285,7 @@ static void __nvoc_init_funcTable_KernelMIGManager_1(KernelMIGManager *pThis, Rm
 
     pThis->__kmigmgrStatePreInitUnlocked__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrStatePreInitUnlocked;
 
-    pThis->__kmigmgrGetTunableState__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrGetTunableState;
-
-    pThis->__kmigmgrCompareTunableState__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrCompareTunableState;
-
-    pThis->__kmigmgrFreeTunableState__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrFreeTunableState;
-
     pThis->__kmigmgrStatePostLoad__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrStatePostLoad;
-
-    pThis->__kmigmgrAllocTunableState__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrAllocTunableState;
-
-    pThis->__kmigmgrSetTunableState__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrSetTunableState;
 
     pThis->__kmigmgrIsPresent__ = &__nvoc_thunk_OBJENGSTATE_kmigmgrIsPresent;
 }
@@ -351,12 +309,15 @@ NV_STATUS __nvoc_objCreate_KernelMIGManager(KernelMIGManager **ppThis, Dynamic *
     KernelMIGManager *pThis;
     RmHalspecOwner *pRmhalspecowner;
 
-    pThis = portMemAllocNonPaged(sizeof(KernelMIGManager));
-    if (pThis == NULL) return NV_ERR_NO_MEMORY;
+    status = __nvoc_handleObjCreateMemAlloc(createFlags, sizeof(KernelMIGManager), (void**)&pThis, (void**)ppThis);
+    if (status != NV_OK)
+        return status;
 
     portMemSet(pThis, 0, sizeof(KernelMIGManager));
 
     __nvoc_initRtti(staticCast(pThis, Dynamic), &__nvoc_class_def_KernelMIGManager);
+
+    pThis->__nvoc_base_OBJENGSTATE.__nvoc_base_Object.createFlags = createFlags;
 
     if (pParent != NULL && !(createFlags & NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY))
     {
@@ -377,11 +338,17 @@ NV_STATUS __nvoc_objCreate_KernelMIGManager(KernelMIGManager **ppThis, Dynamic *
     if (status != NV_OK) goto __nvoc_objCreate_KernelMIGManager_cleanup;
 
     *ppThis = pThis;
+
     return NV_OK;
 
 __nvoc_objCreate_KernelMIGManager_cleanup:
     // do not call destructors here since the constructor already called them
-    portMemFree(pThis);
+    if (createFlags & NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT)
+        portMemSet(pThis, 0, sizeof(KernelMIGManager));
+    else
+        portMemFree(pThis);
+
+    // coverity[leaked_storage:FALSE]
     return status;
 }
 

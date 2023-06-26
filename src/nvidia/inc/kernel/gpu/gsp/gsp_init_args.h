@@ -35,6 +35,8 @@ typedef struct {
     NvU32 pageTableEntryCount;
     NvLength cmdQueueOffset;
     NvLength statQueueOffset;
+    NvLength locklessCmdQueueOffset;
+    NvLength locklessStatQueueOffset;
 } MESSAGE_QUEUE_INIT_ARGUMENTS;
 
 typedef struct {
@@ -51,6 +53,12 @@ typedef struct
     MESSAGE_QUEUE_INIT_ARGUMENTS      messageQueueInitArguments;
     GSP_SR_INIT_ARGUMENTS             srInitArguments;
     NvU32                             gpuInstance;
+
+    struct
+    {
+        NvU64                         pa;
+        NvU64                         size;
+    } profilerArgs;
 } GSP_ARGUMENTS_CACHED;
 
 #endif // GSP_INIT_ARGS_H

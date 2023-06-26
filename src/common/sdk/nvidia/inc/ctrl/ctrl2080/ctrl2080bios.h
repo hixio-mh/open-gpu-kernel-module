@@ -27,7 +27,7 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl2080/ctrl2080bios.finn
+// Source file:      ctrl/ctrl2080/ctrl2080bios.finn
 //
 
 #include "ctrl/ctrl2080/ctrl2080base.h"
@@ -36,10 +36,7 @@
 
 
 
-typedef struct NV2080_CTRL_BIOS_INFO {
-    NvU32 index;
-    NvU32 data;
-} NV2080_CTRL_BIOS_INFO;
+typedef NVXXXX_CTRL_XXX_INFO NV2080_CTRL_BIOS_INFO;
 
 /* Maximum number of bios infos that can be queried at once */
 #define NV2080_CTRL_BIOS_INFO_MAX_SIZE                              (0x0000000F)

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2011-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2011-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -54,6 +54,42 @@
 #define NV_PB_PFM_REQ_HNDLR_PCTRL_BIT_31                           31:31
 #define NV_PB_PFM_REQ_HNDLR_PCTRL_BIT_31_ZERO                        (0)
 
+/*
+ * NV0000_CTRL_PFM_REQ_HNDLR_EDPP_LIMIT_INFO
+ *
+ * GPU EDPpeak Limit information for platform
+ *
+ *    ulVersion
+ *     (Major(16 bits):Minor(16 bits), current v1.0)
+ *     Little endian format 0x00, 0x00, 0x01, 0x00
+ *    limitLast
+ *     last requested platform limit
+ *    limitMin
+ *     Minimum allowed limit value on EDPp policy on both AC and DC
+ *    limitRated
+ *      Rated/default allowed limit value on EDPp policy on AC
+ *    limitMax
+ *     Maximum allowed limit value on EDPp policy on AC
+ *    limitCurr
+ *     Current resultant limit effective on EDPp policy on AC and DC
+ *    limitBattRated
+ *     Default/rated allowed limit on EDPp policy on DC
+ *    limitBattMax
+ *     Maximum allowed limit on EDPp policy on DC
+ *    rsvd
+ *      Reserved
+ */
+typedef struct NV0000_CTRL_PFM_REQ_HNDLR_EDPP_LIMIT_INFO_V1 {
+    NvU32 ulVersion;
+    NvU32 limitLast;
+    NvU32 limitMin;
+    NvU32 limitRated;
+    NvU32 limitMax;
+    NvU32 limitCurr;
+    NvU32 limitBattRated;
+    NvU32 limitBattMax;
+    NvU32 rsvd;
+} NV0000_CTRL_PFM_REQ_HNDLR_EDPP_LIMIT_INFO_V1, *PNV0000_CTRL_PFM_REQ_HNDLR_EDPP_LIMIT_INFO_V1;
 
 /*
  * NV0000_CTRL_PFM_REQ_HNDLR_PSHAREDATA
@@ -159,7 +195,7 @@ typedef struct _NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS
  * Used for PPL and TRL calls, which have up to three input DWORDs and three
  * output DWORDs.
  */
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX_MAX_SZ                           (3)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX_MAX_SZ                               (3U)
 
 typedef struct _NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX
 {
@@ -170,29 +206,33 @@ typedef struct _NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX
     NvU32   output[NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX_MAX_SZ];
 }   NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX;
 
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_TYPE                                    8:0
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SUPPORT                                (GPS_FUNC_SUPPORT)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_PCONTROL                               (GPS_FUNC_PCONTROL)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_PSHARESTATUS                           (GPS_FUNC_PSHARESTATUS)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETPPL                                 (GPS_FUNC_GETPPL)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETPPL                                 (GPS_FUNC_SETPPL)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETTRL                                 (GPS_FUNC_GETTRL)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETTRL                                 (GPS_FUNC_SETTRL)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETPPM                                 (GPS_FUNC_GETPPM)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETPPM                                 (GPS_FUNC_SETPPM)
-#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_PSHAREPARAMS                           (GPS_FUNC_PSHAREPARAMS)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_TYPE                                        8:0
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SUPPORT                      (GPS_FUNC_SUPPORT)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_PCONTROL                    (GPS_FUNC_PCONTROL)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_PSHARESTATUS            (GPS_FUNC_PSHARESTATUS)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETPPL                        (GPS_FUNC_GETPPL)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETPPL                        (GPS_FUNC_SETPPL)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETTRL                        (GPS_FUNC_GETTRL)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETTRL                        (GPS_FUNC_SETTRL)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETPPM                        (GPS_FUNC_GETPPM)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETPPM                        (GPS_FUNC_SETPPM)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_PSHAREPARAMS            (GPS_FUNC_PSHAREPARAMS)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_SETEDPPLIMITINFO    (GPS_FUNC_SETEDPPLIMITINFO)
+#define NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_CMD_GETEDPPLIMIT            (GPS_FUNC_GETEDPPLIMIT)
 
 // PFM_REQ_HNDLR_SUPPORT output
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SUPPORT_AVAIL                                  0:0
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_PCONTROL_AVAIL                               28:28
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_PSHARESTATUS_AVAIL                           32:32
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_GETPPL_AVAIL                                 36:36
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETPPL_AVAIL                                 37:37
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_GETTRL_AVAIL                                 38:38
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETTRL_AVAIL                                 39:39
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_GETPPM_AVAIL                                 40:40
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETPPM_AVAIL                                 41:41
-#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_PSHAREPARAMS_AVAIL                           42:42
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SUPPORT_AVAIL                                   0:0
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_PCONTROL_AVAIL                                28:28
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_PSHARESTATUS_AVAIL                            32:32
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_GETPPL_AVAIL                                  36:36
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETPPL_AVAIL                                  37:37
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_GETTRL_AVAIL                                  38:38
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETTRL_AVAIL                                  39:39
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_GETPPM_AVAIL                                  40:40
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETPPM_AVAIL                                  41:41
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_PSHAREPARAMS_AVAIL                            42:42
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_INFOEDPPLIMIT_AVAIL                           43:43
+#define NV0000_CTRL_PFM_REQ_HNDLR_SUPPORTED_SETEDPPLIMIT_AVAIL                            44:44
 
 // PFM_REQ_HNDLR_PCONTROL
 #define NV0000_CTRL_PFM_REQ_HNDLR_PCONTROL_REQ_TYPE                                         3:0
@@ -209,25 +249,30 @@ typedef struct _NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX
 
 // PFM_REQ_HNDLR_PSHARESTATUS
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_UPDATE_LIMIT                                 0:0   // output only
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_UPDATE_LIMIT_NOT_PENDING                      (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_UPDATE_LIMIT_PENDING                          (1)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_UPDATE_LIMIT_NOT_PENDING                     (0)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_UPDATE_LIMIT_PENDING                         (1)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_DO_NOT_USE                                  19:1
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLAT_USER_CONFIG_TGP_MODE_SUPPORT          20:20    // output only
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLAT_USER_CONFIG_TGP_MODE_SUPPORT_DISABLE     (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLAT_USER_CONFIG_TGP_MODE_SUPPORT_ENABLE      (1)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLAT_USER_CONFIG_TGP_MODE_SUPPORT_DISABLE    (0)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLAT_USER_CONFIG_TGP_MODE_SUPPORT_ENABLE     (1)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_EDPPEAK_LIMIT_UPDATE                       21:21    // output only
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_EDPPEAK_LIMIT_UPDATE_FALSE                    (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_EDPPEAK_LIMIT_UPDATE_TRUE                     (1)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_EDPPEAK_LIMIT_UPDATE_FALSE                   (0)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_EDPPEAK_LIMIT_UPDATE_TRUE                    (1)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_USER_CONFIG_TGP_MODE                       22:22    // output only
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_USER_CONFIG_TGP_MODE_DISABLE                  (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_USER_CONFIG_TGP_MODE_ENABLE                   (1)
-
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_USER_CONFIG_TGP_MODE_DISABLE                 (0)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_USER_CONFIG_TGP_MODE_ENABLE                  (1)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLATFORM_GETEDPPEAKLIMIT_SET               25:25    // output only
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLATFORM_GETEDPPEAKLIMIT_SET_FALSE          (0U)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLATFORM_GETEDPPEAKLIMIT_SET_TRUE           (1U)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLATFORM_SETEDPPEAKLIMITINFO_SET           26:26    // output only
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLATFORM_SETEDPPEAKLIMITINFO_SET_FALSE      (0U)
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARESTATUS_PLATFORM_SETEDPPEAKLIMITINFO_SET_TRUE       (1U)
 
 // Shared by GETPPL, SETPPL
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARGS_COUNT                                            (3)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARGS_VERSION_IDX                                      (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARG0_VERSION_MINOR                                  15:0    // input & output
-#define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARG0_VERSION_MAJOR                                 31:16    // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARG0_VERSION_MINOR                                   15:0   // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARG0_VERSION_MAJOR                                  31:16   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARG0_VERSION_MAJOR_V1                                 (1)   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARGS_LIMIT1_IDX                                       (1)   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPL_ARGS_LIMIT2_IDX                                       (2)   // input & output
@@ -235,20 +280,23 @@ typedef struct _NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX
 // Shared by GETTRL, SETTRL
 #define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARGS_COUNT                                            (2)
 #define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARGS_VERSION_IDX                                      (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARG0_VERSION_MINOR                                  15:0    // input & output
-#define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARG0_VERSION_MAJOR                                 31:16    // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARG0_VERSION_MINOR                                   15:0   // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARG0_VERSION_MAJOR                                  31:16   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARG0_VERSION_MAJOR_V1                                 (1)   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_TRL_ARGS_FREQ_MHZ_IDX                                     (1)   // input & output
 
 // Shared by GETPPM, SETPPM
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARGS_COUNT                                            (2)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARGS_VERSION_IDX                                      (0)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARG0_VERSION_MINOR                                  15:0    // input & output
-#define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARG0_VERSION_MAJOR                                 31:16    // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARG0_VERSION_MINOR                                   15:0   // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARG0_VERSION_MAJOR                                  31:16   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARG0_VERSION_MAJOR_V1                                 (1)   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARGS_IDX                                              (1)   // input & output
-#define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARGS_INDEX                                           7:0    // output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARGS_INDEX                                            7:0   // output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PPM_ARGS_AVAILABLE_MASK                                  15:8   // output
+
+// Shared by INFOEDPPLIMIT and SETEDPPLIMIT
+#define NV0000_CTRL_PFM_REQ_HNDLR_EDPP_VERSION_V10                                   (0x10000U)   // input & output
 
 //
 // PFM_REQ_HNDLR_PSHARE_PARAMS
@@ -262,10 +310,10 @@ typedef struct _NV0000_CTRL_PFM_REQ_HNDLR_CALL_ACPI_PARAMS_EX
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_TGPU_FALSE                           (0)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_TGPU_TRUE                            (1)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_DO_NOT_USE                          14:9   // input & output
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_CTGP                              15:15   // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_CTGP                               15:15   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_CTGP_FALSE                           (0)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_CTGP_TRUE                            (1)
-#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_PPMD                              16:16   // input & output
+#define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_PPMD                               16:16   // input & output
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_PPMD_FALSE                           (0)
 #define NV0000_CTRL_PFM_REQ_HNDLR_PSHARE_PARAMS_STATUS_PPMD_TRUE                            (1)
 

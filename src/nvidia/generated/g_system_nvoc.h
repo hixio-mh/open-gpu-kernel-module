@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -322,6 +322,16 @@ typedef struct SYS_STATIC_CONFIG
     NvBool bOsSevEnabled;
 } SYS_STATIC_CONFIG;
 
+typedef enum
+{
+    CPU_VENDOR_UNKNOWN = 0,
+    CPU_VENDOR_INTEL,
+    CPU_VENDOR_AMD,
+    CPU_VENDOR_WINCHIP,
+    CPU_VENDOR_CYRIX,
+    CPU_VENDOR_TRANSM
+} CPU_VENDOR;
+
 typedef struct
 {
     NvBool bInitialized;           // Set to true once we id the CPU
@@ -332,7 +342,7 @@ typedef struct
     NvU32 l1DataCacheSize;         // L1 data (or unified) cache size (KB)
     NvU32 l2DataCacheSize;         // L2 data (or unified) cache size (KB)
     NvU32 dataCacheLineSize;       // Bytes per line in the L1 data cache
-    NvU32 hostPageSize;            // Native host os page size (4k/64k/etc)
+    NvU64 hostPageSize;            // Native host os page size (4k/64k/etc)
     NvU32 numPhysicalCpus;         // Number of physical cpus
     NvU32 numLogicalCpus;          // Total number of logical cpus
     NvU32 maxLogicalCpus;          // Max Number of Cores on the System
@@ -340,6 +350,7 @@ typedef struct
                                    // filled in if CPU has embedded name
     NvU32 family;                  // Vendor defined Family/extended Family
     NvU32 model;                   // Vendor defined Model/extended Model
+    NvU8  vendor;                  // Vendor CPU_VENDOR
     NvU32 coresOnDie;              // # of cores on the die (0 if unknown)
     NvU32 platformID;              // Chip package type
     NvU8 stepping;                 // Silicon stepping
@@ -395,12 +406,12 @@ struct OBJSYS {
     NvBool PDB_PROP_SYS_PRIORITY_BOOST;
     NvU32 PDB_PROP_SYS_PRIORITY_THROTTLE_DELAY_US;
     NvBool PDB_PROP_SYS_BUGCHECK_ON_TIMEOUT;
+    NvBool PDB_PROP_SYS_CLIENT_HANDLE_LOOKUP;
     NvU32 apiLockMask;
     NvU32 apiLockModuleMask;
     NvU32 gpuLockModuleMask;
     NvBool PDB_PROP_SYS_ROUTE_TO_PHYSICAL_LOCK_BYPASS;
     NvU32 pwrTransitionTimeoutOverride;
-    NvBool bMulticastFlaEnabled;
     SYS_STATIC_CONFIG staticConfig;
     NvU32 debugFlags;
     NvU32 backtraceStackDepth;
@@ -414,6 +425,8 @@ struct OBJSYS {
     NvBool PDB_PROP_SYS_IS_QSYNC_FW_REVISION_CHECK_DISABLED;
     NvU64 rmInstanceId;
     NvU32 currentCid;
+    NvBool bUseDeferredClientListFree;
+    NvU32 clientListDeferredFreeLimit;
     OS_RM_CAPS *pOsRmCaps;
     struct OBJGPUMGR *pGpuMgr;
     struct OBJGSYNCMGR *pGsyncMgr;
@@ -485,6 +498,8 @@ extern const struct NVOC_CLASS_DEF __nvoc_class_def_OBJSYS;
 #define PDB_PROP_SYS_SBIOS_NVIF_POWERMIZER_LIMIT_BASE_NAME PDB_PROP_SYS_SBIOS_NVIF_POWERMIZER_LIMIT
 #define PDB_PROP_SYS_IS_UEFI_BASE_CAST
 #define PDB_PROP_SYS_IS_UEFI_BASE_NAME PDB_PROP_SYS_IS_UEFI
+#define PDB_PROP_SYS_CLIENT_HANDLE_LOOKUP_BASE_CAST
+#define PDB_PROP_SYS_CLIENT_HANDLE_LOOKUP_BASE_NAME PDB_PROP_SYS_CLIENT_HANDLE_LOOKUP
 #define PDB_PROP_SYS_INTERNAL_EVENT_BUFFER_ALLOC_ALLOWED_BASE_CAST
 #define PDB_PROP_SYS_INTERNAL_EVENT_BUFFER_ALLOC_ALLOWED_BASE_NAME PDB_PROP_SYS_INTERNAL_EVENT_BUFFER_ALLOC_ALLOWED
 #define PDB_PROP_SYS_IS_GSYNC_ENABLED_BASE_CAST

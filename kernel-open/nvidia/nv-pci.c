@@ -156,6 +156,185 @@ static void nv_init_dynamic_power_management
     rm_init_dynamic_power_management(sp, nv, pr3_acpi_method_present);
 }
 
+static int nv_resize_pcie_bars(struct pci_dev *pci_dev) {
+#if defined(NV_PCI_REBAR_GET_POSSIBLE_SIZES_PRESENT)
+    u16 cmd;
+    int r, old_size, requested_size;
+    unsigned long sizes;
+    int ret = 0;
+#if NV_IS_EXPORT_SYMBOL_PRESENT_pci_find_host_bridge
+    struct pci_host_bridge *host;
+#endif
+
+    if (NVreg_EnableResizableBar == 0)
+    {
+        nv_printf(NV_DBG_INFO, "NVRM: resizable BAR disabled by regkey, skipping\n");
+        return 0;
+    }
+
+    // Check if BAR1 has PCIe rebar capabilities
+    sizes = pci_rebar_get_possible_sizes(pci_dev, NV_GPU_BAR1);
+    if (sizes == 0) {
+        /* ReBAR not available. Nothing to do. */
+        return 0;
+    }
+
+    /* Try to resize the BAR to the largest supported size */
+    requested_size = fls(sizes) - 1;
+
+    /* Save the current size, just in case things go wrong */
+    old_size = pci_rebar_bytes_to_size(pci_resource_len(pci_dev, NV_GPU_BAR1));
+
+    if (old_size == requested_size) {
+        nv_printf(NV_DBG_INFO, "NVRM: %04x:%02x:%02x.%x: BAR1 already at requested size.\n",
+            NV_PCI_DOMAIN_NUMBER(pci_dev), NV_PCI_BUS_NUMBER(pci_dev),
+            NV_PCI_SLOT_NUMBER(pci_dev), PCI_FUNC(pci_dev->devfn));
+        return 0;
+    }
+#if NV_IS_EXPORT_SYMBOL_PRESENT_pci_find_host_bridge
+    /* If the kernel will refuse us, don't even try to resize,
+       but give an informative error */
+    host = pci_find_host_bridge(pci_dev->bus);
+    if (host->preserve_config) {
+        nv_printf(NV_DBG_INFO, "NVRM: Not resizing BAR because the firmware forbids moving windows.\n");
+        return 0;
+    }
+#endif
+    nv_printf(NV_DBG_INFO, "NVRM: %04x:%02x:%02x.%x: Attempting to resize BAR1.\n",
+        NV_PCI_DOMAIN_NUMBER(pci_dev), NV_PCI_BUS_NUMBER(pci_dev),
+        NV_PCI_SLOT_NUMBER(pci_dev), PCI_FUNC(pci_dev->devfn));
+
+    /* Disable memory decoding - required by the kernel APIs */
+    pci_read_config_word(pci_dev, PCI_COMMAND, &cmd);
+    pci_write_config_word(pci_dev, PCI_COMMAND, cmd & ~PCI_COMMAND_MEMORY);
+
+    /* Release BAR1 */
+    pci_release_resource(pci_dev, NV_GPU_BAR1);
+
+    /* Release BAR3 - we don't want to resize it, it's in the same bridge, so we'll want to move it */
+    pci_release_resource(pci_dev, NV_GPU_BAR3);
+
+resize:
+    /* Attempt to resize BAR1 to the largest supported size */
+    r = pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size);
+
+    if (r) {
+        if (r == -ENOSPC)
+        {
+            /* step through smaller sizes down to original size */
+            if (requested_size > old_size)
+            {
+                clear_bit(fls(sizes) - 1, &sizes);
+                requested_size = fls(sizes) - 1;
+                goto resize;
+            }
+            else
+            {
+                nv_printf(NV_DBG_ERRORS, "NVRM: No address space to allocate resized BAR1.\n");
+            }
+        }
+        else if (r == -EOPNOTSUPP)
+        {
+            nv_printf(NV_DBG_WARNINGS, "NVRM: BAR resize resource not supported.\n");
+        }
+        else
+        {
+            nv_printf(NV_DBG_WARNINGS, "NVRM: BAR resizing failed with error `%d`.\n", r);
+        }
+    }
+
+    /* Re-attempt assignment of PCIe resources */
+    pci_assign_unassigned_bus_resources(pci_dev->bus);
+
+    if ((pci_resource_flags(pci_dev, NV_GPU_BAR1) & IORESOURCE_UNSET) ||
+        (pci_resource_flags(pci_dev, NV_GPU_BAR3) & IORESOURCE_UNSET)) {
+        if (requested_size != old_size) {
+            /* Try to get the BAR back with the original size */
+            requested_size = old_size;
+            goto resize;
+        }
+        /* Something went horribly wrong and the kernel didn't manage to re-allocate BAR1.
+           This is unlikely (because we had space before), but can happen. */
+        nv_printf(NV_DBG_ERRORS, "NVRM: FATAL: Failed to re-allocate BAR1.\n");
+        ret = -ENODEV;
+    }
+
+    /* Re-enable memory decoding */
+    pci_write_config_word(pci_dev, PCI_COMMAND, cmd);
+
+    return ret;
+#else
+    nv_printf(NV_DBG_INFO, "NVRM: Resizable BAR is not supported on this kernel version.\n");
+    return 0;
+#endif /* NV_PCI_REBAR_GET_POSSIBLE_SIZES_PRESENT */
+}
+
+static void
+nv_init_coherent_link_info
+(
+    nv_state_t *nv
+)
+{
+#if defined(NV_DEVICE_PROPERTY_READ_U64_PRESENT) && \
+    defined(CONFIG_ACPI_NUMA) && \
+    NV_IS_EXPORT_SYMBOL_PRESENT_pxm_to_node
+    nv_linux_state_t *nvl = NV_GET_NVL_FROM_NV_STATE(nv);
+    NvU64 pa = 0;
+    NvU64 pxm_start = 0;
+    NvU64 pxm_count = 0;
+    NvU32 pxm;
+
+    if (!NVCPU_IS_AARCH64)
+        return;
+
+    if (device_property_read_u64(nvl->dev, "nvidia,gpu-mem-base-pa", &pa) != 0)
+        goto failed;
+    if (device_property_read_u64(nvl->dev, "nvidia,gpu-mem-pxm-start", &pxm_start) != 0)
+        goto failed;
+    if (device_property_read_u64(nvl->dev, "nvidia,gpu-mem-pxm-count", &pxm_count) != 0)
+        goto failed;
+
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "DSD properties: \n");
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "\tGPU memory PA: 0x%lx \n", pa);
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "\tGPU memory PXM start: %u \n", pxm_start);
+    NV_DEV_PRINTF(NV_DBG_INFO, nv, "\tGPU memory PXM count: %u \n", pxm_count);
+
+    nvl->coherent_link_info.gpu_mem_pa = pa;
+
+    for (pxm = pxm_start; pxm < (pxm_start + pxm_count); pxm++)
+    {
+        NvU32 node = pxm_to_node(pxm);
+        if (node != NUMA_NO_NODE)
+        {
+            set_bit(node, nvl->coherent_link_info.free_node_bitmap);
+        }
+    }
+
+    if (NVreg_EnableUserNUMAManagement)
+    {
+        NV_ATOMIC_SET(nvl->numa_info.status, NV_IOCTL_NUMA_STATUS_OFFLINE);
+        nvl->numa_info.use_auto_online = NV_TRUE;
+
+        if (!bitmap_empty(nvl->coherent_link_info.free_node_bitmap, MAX_NUMNODES))
+        {
+            nvl->numa_info.node_id = find_first_bit(nvl->coherent_link_info.free_node_bitmap, MAX_NUMNODES);
+        }
+        NV_DEV_PRINTF(NV_DBG_SETUP, nv, "GPU NUMA information: node id: %u PA: 0x%llx\n",
+                      nvl->numa_info.node_id, nvl->coherent_link_info.gpu_mem_pa);
+    }
+    else
+    {
+        NV_DEV_PRINTF(NV_DBG_SETUP, nv, "User-mode NUMA onlining disabled.\n");
+    }
+
+    return;
+
+failed:
+    NV_DEV_PRINTF(NV_DBG_SETUP, nv, "Cannot get coherent link info.\n");
+#endif
+    return;
+}
+
 /* find nvidia devices and set initial state */
 static int
 nv_pci_probe
@@ -349,6 +528,14 @@ next_bar:
             (NvU64)NV_PCI_RESOURCE_START(pci_dev, i),
             NV_PCI_DOMAIN_NUMBER(pci_dev), NV_PCI_BUS_NUMBER(pci_dev),
             NV_PCI_SLOT_NUMBER(pci_dev), PCI_FUNC(pci_dev->devfn));
+
+        // With GH180 C2C, VF BAR1/2 are disabled and therefore expected to be 0.
+        if (j != NV_GPU_BAR_INDEX_REGS)
+        {
+            nv_printf(NV_DBG_INFO, "NVRM: ignore invalid BAR failure for BAR%d\n", j);
+            continue;
+        }
+
         goto failed;
     }
 
@@ -362,6 +549,12 @@ next_bar:
             "NVRM: ownership of the device's registers.\n",
             (NV_PCI_RESOURCE_SIZE(pci_dev, regs_bar_index) >> 20),
             (NvU64)NV_PCI_RESOURCE_START(pci_dev, regs_bar_index));
+        goto failed;
+    }
+
+    if (nv_resize_pcie_bars(pci_dev)) {
+        nv_printf(NV_DBG_ERRORS,
+            "NVRM: Fatal Error while attempting to resize PCIe BARs.\n");
         goto failed;
     }
 
@@ -427,11 +620,16 @@ next_bar:
 
     nv_init_ibmnpu_info(nv);
 
+    nv_init_coherent_link_info(nv);
+
 #if defined(NVCPU_PPC64LE)
     // Use HW NUMA support as a proxy for ATS support. This is true in the only
     // PPC64LE platform where ATS is currently supported (IBM P9).
     nv_ats_supported &= nv_platform_supports_numa(nvl);
 #else
+#if defined(NV_PCI_DEV_HAS_ATS_ENABLED)
+    nv_ats_supported &= pci_dev->ats_enabled;
+#endif
 #endif
     if (nv_ats_supported)
     {

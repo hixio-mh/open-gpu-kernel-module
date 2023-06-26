@@ -227,8 +227,8 @@ struct OBJGVASPACE {
     NV_STATUS (*__gvaspaceMap__)(struct OBJGVASPACE *, struct OBJGPU *, const NvU64, const NvU64, const MMU_MAP_TARGET *, const VAS_MAP_FLAGS);
     void (*__gvaspaceUnmap__)(struct OBJGVASPACE *, struct OBJGPU *, const NvU64, const NvU64);
     struct OBJEHEAP *(*__gvaspaceGetHeap__)(struct OBJGVASPACE *);
-    NvU32 (*__gvaspaceGetMapPageSize__)(struct OBJGVASPACE *, struct OBJGPU *, EMEMBLOCK *);
-    NvU32 (*__gvaspaceGetBigPageSize__)(struct OBJGVASPACE *);
+    NvU64 (*__gvaspaceGetMapPageSize__)(struct OBJGVASPACE *, struct OBJGPU *, EMEMBLOCK *);
+    NvU64 (*__gvaspaceGetBigPageSize__)(struct OBJGVASPACE *);
     NvU32 (*__gvaspaceGetFlags__)(struct OBJGVASPACE *);
     NvBool (*__gvaspaceIsMirrored__)(struct OBJGVASPACE *);
     NvBool (*__gvaspaceIsFaultCapable__)(struct OBJGVASPACE *);
@@ -249,8 +249,7 @@ struct OBJGVASPACE {
     NvU64 (*__gvaspaceGetVaLimit__)(struct OBJGVASPACE *);
     NvU64 (*__gvaspaceGetVaStart__)(struct OBJGVASPACE *);
     struct OBJEHEAP *pHeap;
-    NvU32 bigPageSize;
-    NvU64 maxPageSizeSupported;
+    NvU64 bigPageSize;
     NvU64 compPageSize;
     NvU64 extManagedAlign;
     NvU32 flags;
@@ -386,15 +385,15 @@ static inline struct OBJEHEAP *gvaspaceGetHeap_DISPATCH(struct OBJGVASPACE *pVAS
     return pVAS->__gvaspaceGetHeap__(pVAS);
 }
 
-NvU32 gvaspaceGetMapPageSize_IMPL(struct OBJGVASPACE *pVAS, struct OBJGPU *pGpu, EMEMBLOCK *pMemBlock);
+NvU64 gvaspaceGetMapPageSize_IMPL(struct OBJGVASPACE *pVAS, struct OBJGPU *pGpu, EMEMBLOCK *pMemBlock);
 
-static inline NvU32 gvaspaceGetMapPageSize_DISPATCH(struct OBJGVASPACE *pVAS, struct OBJGPU *pGpu, EMEMBLOCK *pMemBlock) {
+static inline NvU64 gvaspaceGetMapPageSize_DISPATCH(struct OBJGVASPACE *pVAS, struct OBJGPU *pGpu, EMEMBLOCK *pMemBlock) {
     return pVAS->__gvaspaceGetMapPageSize__(pVAS, pGpu, pMemBlock);
 }
 
-NvU32 gvaspaceGetBigPageSize_IMPL(struct OBJGVASPACE *pVAS);
+NvU64 gvaspaceGetBigPageSize_IMPL(struct OBJGVASPACE *pVAS);
 
-static inline NvU32 gvaspaceGetBigPageSize_DISPATCH(struct OBJGVASPACE *pVAS) {
+static inline NvU64 gvaspaceGetBigPageSize_DISPATCH(struct OBJGVASPACE *pVAS) {
     return pVAS->__gvaspaceGetBigPageSize__(pVAS);
 }
 

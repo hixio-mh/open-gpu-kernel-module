@@ -90,6 +90,9 @@ kmemsysInitFlushSysmemBuffer_GA100
     //
     if (pKernelMemorySystem->pSysmemFlushBufferMemDesc == NULL)
     {
+        NvU64 flags = MEMDESC_FLAGS_NONE;
+
+            flags |= MEMDESC_FLAGS_ALLOC_IN_UNPROTECTED_MEMORY;
         //
         // Sysmem flush buffer
         // The sysmembar flush does a zero byte read of sysmem if there was a
@@ -103,7 +106,7 @@ kmemsysInitFlushSysmemBuffer_GA100
                                NV_TRUE,
                                ADDR_SYSMEM,
                                NV_MEMORY_UNCACHED,
-                               MEMDESC_FLAGS_NONE);
+                               flags);
         if (status != NV_OK)
             return status;
 
@@ -262,14 +265,14 @@ kmemsysSwizzIdToVmmuSegmentsRange_GA100
     {
         case 0:
         {
-            numBoundaries = 0; 
+            numBoundaries = 0;
             partitionDivFactor = 1;
             break;
         }
         case 1:
         case 2:
         {
-            numBoundaries = 1; 
+            numBoundaries = 1;
             partitionDivFactor = 2;
             break;
         }
@@ -278,7 +281,7 @@ kmemsysSwizzIdToVmmuSegmentsRange_GA100
         case 5:
         case 6:
         {
-            numBoundaries = 3; 
+            numBoundaries = 3;
             partitionDivFactor = 4;
             break;
         }

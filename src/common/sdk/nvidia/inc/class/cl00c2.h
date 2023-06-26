@@ -26,7 +26,7 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: class/cl00c2.finn
+// Source file:      class/cl00c2.finn
 //
 
 #define NV01_MEMORY_LOCAL_PHYSICAL (0xc2U) /* finn: Evaluated from "NV_PHYSICAL_MEMORY_ALLOCATION_PARAMS_MESSAGE_ID" */
@@ -34,8 +34,8 @@
 #define NV_PHYSICAL_MEMORY_ALLOCATION_PARAMS_MESSAGE_ID (0x00c2U)
 
 typedef struct NV_PHYSICAL_MEMORY_ALLOCATION_PARAMS {
-    NV_DECLARE_ALIGNED(NvU64 memSize, 8); // [OUT] 
+    NV_DECLARE_ALIGNED(NvU64 memSize, 8); // [OUT]
     NvU32 format; // [IN] - PTE format to use
-    NvU32 pageSize; // [IN] - Page size to use
+    NV_DECLARE_ALIGNED(NvU64 pageSize, 8); // [IN] - Page size to use
 } NV_PHYSICAL_MEMORY_ALLOCATION_PARAMS;
 

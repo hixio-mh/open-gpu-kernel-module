@@ -105,6 +105,50 @@ static NvBool __nvoc_thunk_GpuResource_deviceShareCallback(struct Device *pGpuRe
     return gpuresShareCallback((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset), pInvokingClient, pParentRef, pSharePolicy);
 }
 
+static NV_STATUS __nvoc_thunk_RmResource_deviceCheckMemInterUnmap(struct Device *pRmResource, NvBool bSubdeviceHandleProvided) {
+    return rmresCheckMemInterUnmap((struct RmResource *)(((unsigned char *)pRmResource) + __nvoc_rtti_Device_RmResource.offset), bSubdeviceHandleProvided);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_deviceMapTo(struct Device *pResource, RS_RES_MAP_TO_PARAMS *pParams) {
+    return resMapTo((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pParams);
+}
+
+static NV_STATUS __nvoc_thunk_GpuResource_deviceGetMapAddrSpace(struct Device *pGpuResource, struct CALL_CONTEXT *pCallContext, NvU32 mapFlags, NV_ADDRESS_SPACE *pAddrSpace) {
+    return gpuresGetMapAddrSpace((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset), pCallContext, mapFlags, pAddrSpace);
+}
+
+static NvU32 __nvoc_thunk_RsResource_deviceGetRefCount(struct Device *pResource) {
+    return resGetRefCount((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset));
+}
+
+static void __nvoc_thunk_RsResource_deviceAddAdditionalDependants(struct RsClient *pClient, struct Device *pResource, RsResourceRef *pReference) {
+    resAddAdditionalDependants(pClient, (struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pReference);
+}
+
+static NV_STATUS __nvoc_thunk_RmResource_deviceControl_Prologue(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    return rmresControl_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RmResource.offset), pCallContext, pParams);
+}
+
+static NV_STATUS __nvoc_thunk_GpuResource_deviceGetRegBaseOffsetAndSize(struct Device *pGpuResource, struct OBJGPU *pGpu, NvU32 *pOffset, NvU32 *pSize) {
+    return gpuresGetRegBaseOffsetAndSize((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset), pGpu, pOffset, pSize);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_deviceUnmapFrom(struct Device *pResource, RS_RES_UNMAP_FROM_PARAMS *pParams) {
+    return resUnmapFrom((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pParams);
+}
+
+static void __nvoc_thunk_RmResource_deviceControl_Epilogue(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    rmresControl_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RmResource.offset), pCallContext, pParams);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_deviceControlLookup(struct Device *pResource, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams, const struct NVOC_EXPORTED_METHOD_DEF **ppEntry) {
+    return resControlLookup((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pParams, ppEntry);
+}
+
+static NvHandle __nvoc_thunk_GpuResource_deviceGetInternalObjectHandle(struct Device *pGpuResource) {
+    return gpuresGetInternalObjectHandle((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset));
+}
+
 static NV_STATUS __nvoc_thunk_GpuResource_deviceUnmap(struct Device *pGpuResource, struct CALL_CONTEXT *pCallContext, struct RsCpuMapping *pCpuMapping) {
     return gpuresUnmap((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset), pCallContext, pCpuMapping);
 }
@@ -117,40 +161,12 @@ static NV_STATUS __nvoc_thunk_RmResource_deviceGetMemoryMappingDescriptor(struct
     return rmresGetMemoryMappingDescriptor((struct RmResource *)(((unsigned char *)pRmResource) + __nvoc_rtti_Device_RmResource.offset), ppMemDesc);
 }
 
-static NV_STATUS __nvoc_thunk_GpuResource_deviceGetMapAddrSpace(struct Device *pGpuResource, struct CALL_CONTEXT *pCallContext, NvU32 mapFlags, NV_ADDRESS_SPACE *pAddrSpace) {
-    return gpuresGetMapAddrSpace((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset), pCallContext, mapFlags, pAddrSpace);
-}
-
-static NvHandle __nvoc_thunk_GpuResource_deviceGetInternalObjectHandle(struct Device *pGpuResource) {
-    return gpuresGetInternalObjectHandle((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset));
-}
-
 static NV_STATUS __nvoc_thunk_RsResource_deviceControlFilter(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
     return resControlFilter((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pCallContext, pParams);
 }
 
-static void __nvoc_thunk_RsResource_deviceAddAdditionalDependants(struct RsClient *pClient, struct Device *pResource, RsResourceRef *pReference) {
-    resAddAdditionalDependants(pClient, (struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pReference);
-}
-
-static NvU32 __nvoc_thunk_RsResource_deviceGetRefCount(struct Device *pResource) {
-    return resGetRefCount((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset));
-}
-
-static NV_STATUS __nvoc_thunk_RmResource_deviceCheckMemInterUnmap(struct Device *pRmResource, NvBool bSubdeviceHandleProvided) {
-    return rmresCheckMemInterUnmap((struct RmResource *)(((unsigned char *)pRmResource) + __nvoc_rtti_Device_RmResource.offset), bSubdeviceHandleProvided);
-}
-
-static NV_STATUS __nvoc_thunk_RsResource_deviceMapTo(struct Device *pResource, RS_RES_MAP_TO_PARAMS *pParams) {
-    return resMapTo((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pParams);
-}
-
-static NV_STATUS __nvoc_thunk_RmResource_deviceControl_Prologue(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
-    return rmresControl_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RmResource.offset), pCallContext, pParams);
-}
-
-static NV_STATUS __nvoc_thunk_GpuResource_deviceGetRegBaseOffsetAndSize(struct Device *pGpuResource, struct OBJGPU *pGpu, NvU32 *pOffset, NvU32 *pSize) {
-    return gpuresGetRegBaseOffsetAndSize((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_Device_GpuResource.offset), pGpu, pOffset, pSize);
+static NV_STATUS __nvoc_thunk_RmResource_deviceControlSerialization_Prologue(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    return rmresControlSerialization_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RmResource.offset), pCallContext, pParams);
 }
 
 static NvBool __nvoc_thunk_RsResource_deviceCanCopy(struct Device *pResource) {
@@ -161,20 +177,12 @@ static void __nvoc_thunk_RsResource_devicePreDestruct(struct Device *pResource) 
     resPreDestruct((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset));
 }
 
-static NV_STATUS __nvoc_thunk_RsResource_deviceUnmapFrom(struct Device *pResource, RS_RES_UNMAP_FROM_PARAMS *pParams) {
-    return resUnmapFrom((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pParams);
-}
-
 static NV_STATUS __nvoc_thunk_RsResource_deviceIsDuplicate(struct Device *pResource, NvHandle hMemory, NvBool *pDuplicate) {
     return resIsDuplicate((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), hMemory, pDuplicate);
 }
 
-static void __nvoc_thunk_RmResource_deviceControl_Epilogue(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
-    rmresControl_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RmResource.offset), pCallContext, pParams);
-}
-
-static NV_STATUS __nvoc_thunk_RsResource_deviceControlLookup(struct Device *pResource, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams, const struct NVOC_EXPORTED_METHOD_DEF **ppEntry) {
-    return resControlLookup((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RsResource.offset), pParams, ppEntry);
+static void __nvoc_thunk_RmResource_deviceControlSerialization_Epilogue(struct Device *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    rmresControlSerialization_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_Device_RmResource.offset), pCallContext, pParams);
 }
 
 static NV_STATUS __nvoc_thunk_GpuResource_deviceMap(struct Device *pGpuResource, struct CALL_CONTEXT *pCallContext, struct RS_CPU_MAP_PARAMS *pParams, struct RsCpuMapping *pCpuMapping) {
@@ -237,6 +245,21 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
 #endif
     },
     {               /*  [3] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x200u)
+        /*pFunc=*/      (void (*)(void)) NULL,
+#else
+        /*pFunc=*/      (void (*)(void)) deviceCtrlCmdBifGetPciePowerControlMask_IMPL,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x200u)
+        /*flags=*/      0x200u,
+        /*accessRight=*/0x0u,
+        /*methodId=*/   0x800106u,
+        /*paramSize=*/  sizeof(NV0080_CTRL_CMD_BIF_GET_PCIE_POWER_CONTROL_MASK_PARAMS),
+        /*pClassInfo=*/ &(__nvoc_class_def_Device.classInfo),
+#if NV_PRINTF_STRINGS_ALLOWED
+        /*func=*/       "deviceCtrlCmdBifGetPciePowerControlMask"
+#endif
+    },
+    {               /*  [4] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x813u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -251,13 +274,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetClasslist"
 #endif
     },
-    {               /*  [4] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
+    {               /*  [5] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4811u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdGpuGetNumSubdevices_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
-        /*flags=*/      0x811u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4811u)
+        /*flags=*/      0x4811u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x800280u,
         /*paramSize=*/  sizeof(NV0080_CTRL_GPU_GET_NUM_SUBDEVICES_PARAMS),
@@ -266,7 +289,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetNumSubdevices"
 #endif
     },
-    {               /*  [5] */
+    {               /*  [6] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x5u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -281,7 +304,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuModifyGpuSwStatePersistence"
 #endif
     },
-    {               /*  [6] */
+    {               /*  [7] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -296,13 +319,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuQueryGpuSwStatePersistence"
 #endif
     },
-    {               /*  [7] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+    {               /*  [8] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdGpuGetVirtualizationMode_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
-        /*flags=*/      0x810u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
+        /*flags=*/      0x811u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x800289u,
         /*paramSize=*/  sizeof(NV0080_CTRL_GPU_GET_VIRTUALIZATION_MODE_PARAMS),
@@ -311,7 +334,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetVirtualizationMode"
 #endif
     },
-    {               /*  [8] */
+    {               /*  [9] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -326,7 +349,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetSparseTextureComputeMode"
 #endif
     },
-    {               /*  [9] */
+    {               /*  [10] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -341,7 +364,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuSetSparseTextureComputeMode"
 #endif
     },
-    {               /*  [10] */
+    {               /*  [11] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -356,7 +379,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetVgxCaps"
 #endif
     },
-    {               /*  [11] */
+    {               /*  [12] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -371,7 +394,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetSriovCaps"
 #endif
     },
-    {               /*  [12] */
+    {               /*  [13] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x813u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -386,7 +409,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetClasslistV2"
 #endif
     },
-    {               /*  [13] */
+    {               /*  [14] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x13u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -401,7 +424,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetFindSubDeviceHandle"
 #endif
     },
-    {               /*  [14] */
+    {               /*  [15] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x211u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -416,7 +439,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuGetBrandCaps"
 #endif
     },
-    {               /*  [15] */
+    {               /*  [16] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x204u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -431,7 +454,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdGpuSetVgpuVfBar1Size"
 #endif
     },
-    {               /*  [16] */
+    {               /*  [17] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x812u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -446,7 +469,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdKGrGetCaps"
 #endif
     },
-    {               /*  [17] */
+    {               /*  [18] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -461,7 +484,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdKGrGetInfo"
 #endif
     },
-    {               /*  [18] */
+    {               /*  [19] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -476,7 +499,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdKGrGetTpcPartitionMode"
 #endif
     },
-    {               /*  [19] */
+    {               /*  [20] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -491,7 +514,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdKGrSetTpcPartitionMode"
 #endif
     },
-    {               /*  [20] */
+    {               /*  [21] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x812u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -506,7 +529,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdKGrGetCapsV2"
 #endif
     },
-    {               /*  [21] */
+    {               /*  [22] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -521,13 +544,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdKGrGetInfoV2"
 #endif
     },
-    {               /*  [22] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
+    {               /*  [23] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdFbGetCaps_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
-        /*flags=*/      0x11u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
+        /*flags=*/      0x811u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x801301u,
         /*paramSize=*/  sizeof(NV0080_CTRL_FB_GET_CAPS_PARAMS),
@@ -536,7 +559,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFbGetCaps"
 #endif
     },
-    {               /*  [23] */
+    {               /*  [24] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -551,13 +574,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFbGetCompbitStoreInfo"
 #endif
     },
-    {               /*  [24] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
+    {               /*  [25] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4811u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdFbGetCapsV2_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
-        /*flags=*/      0x11u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4811u)
+        /*flags=*/      0x4811u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x801307u,
         /*paramSize=*/  sizeof(NV0080_CTRL_FB_GET_CAPS_V2_PARAMS),
@@ -566,13 +589,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFbGetCapsV2"
 #endif
     },
-    {               /*  [25] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+    {               /*  [26] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x850u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdHostGetCaps_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
-        /*flags=*/      0x810u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x850u)
+        /*flags=*/      0x850u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x801401u,
         /*paramSize=*/  sizeof(NV0080_CTRL_HOST_GET_CAPS_PARAMS),
@@ -581,13 +604,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdHostGetCaps"
 #endif
     },
-    {               /*  [26] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+    {               /*  [27] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4850u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdHostGetCapsV2_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
-        /*flags=*/      0x810u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4850u)
+        /*flags=*/      0x4850u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x801402u,
         /*paramSize=*/  sizeof(NV0080_CTRL_HOST_GET_CAPS_V2_PARAMS),
@@ -596,7 +619,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdHostGetCapsV2"
 #endif
     },
-    {               /*  [27] */
+    {               /*  [28] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -611,7 +634,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoGetCaps"
 #endif
     },
-    {               /*  [28] */
+    {               /*  [29] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -626,7 +649,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoStartSelectedChannels"
 #endif
     },
-    {               /*  [29] */
+    {               /*  [30] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -641,13 +664,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoGetEngineContextProperties"
 #endif
     },
-    {               /*  [30] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+    {               /*  [31] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdFifoGetChannelList_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
-        /*flags=*/      0x810u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
+        /*flags=*/      0x811u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x80170du,
         /*paramSize=*/  sizeof(NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS),
@@ -656,7 +679,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoGetChannelList"
 #endif
     },
-    {               /*  [31] */
+    {               /*  [32] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2211u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -671,7 +694,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoGetLatencyBufferSize"
 #endif
     },
-    {               /*  [32] */
+    {               /*  [33] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -686,7 +709,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoSetChannelProperties"
 #endif
     },
-    {               /*  [33] */
+    {               /*  [34] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2204u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -701,7 +724,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoStopRunlist"
 #endif
     },
-    {               /*  [34] */
+    {               /*  [35] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2204u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -716,7 +739,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoStartRunlist"
 #endif
     },
-    {               /*  [35] */
+    {               /*  [36] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -731,7 +754,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoGetCapsV2"
 #endif
     },
-    {               /*  [36] */
+    {               /*  [37] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -746,7 +769,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdFifoIdleChannels"
 #endif
     },
-    {               /*  [37] */
+    {               /*  [38] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -761,7 +784,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaGetPteInfo"
 #endif
     },
-    {               /*  [38] */
+    {               /*  [39] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -776,7 +799,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaFlush"
 #endif
     },
-    {               /*  [39] */
+    {               /*  [40] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -791,7 +814,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaAdvSchedGetVaCaps"
 #endif
     },
-    {               /*  [40] */
+    {               /*  [41] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -806,7 +829,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaGetPdeInfo"
 #endif
     },
-    {               /*  [41] */
+    {               /*  [42] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -821,7 +844,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaSetPteInfo"
 #endif
     },
-    {               /*  [42] */
+    {               /*  [43] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -836,7 +859,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaInvalidateTLB"
 #endif
     },
-    {               /*  [43] */
+    {               /*  [44] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -851,7 +874,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaGetCaps"
 #endif
     },
-    {               /*  [44] */
+    {               /*  [45] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -866,7 +889,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaSetVASpaceSize"
 #endif
     },
-    {               /*  [45] */
+    {               /*  [46] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -881,7 +904,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaUpdatePde2"
 #endif
     },
-    {               /*  [46] */
+    {               /*  [47] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -896,7 +919,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaEnablePrivilegedRange"
 #endif
     },
-    {               /*  [47] */
+    {               /*  [48] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x1c0000u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -911,7 +934,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaSetDefaultVASpace"
 #endif
     },
-    {               /*  [48] */
+    {               /*  [49] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x140004u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -926,7 +949,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaSetPageDirectory"
 #endif
     },
-    {               /*  [49] */
+    {               /*  [50] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x140004u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -941,7 +964,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdDmaUnsetPageDirectory"
 #endif
     },
-    {               /*  [50] */
+    {               /*  [51] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -956,7 +979,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdMsencGetCaps"
 #endif
     },
-    {               /*  [51] */
+    {               /*  [52] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -971,7 +994,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdBspGetCapsV2"
 #endif
     },
-    {               /*  [52] */
+    {               /*  [53] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x1u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -986,7 +1009,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdOsUnixVTSwitch"
 #endif
     },
-    {               /*  [53] */
+    {               /*  [54] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x1u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -1001,7 +1024,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdOsUnixVTGetFBInfo"
 #endif
     },
-    {               /*  [54] */
+    {               /*  [55] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x210u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -1016,7 +1039,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdNvjpgGetCapsV2"
 #endif
     },
-    {               /*  [55] */
+    {               /*  [56] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x600u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -1031,7 +1054,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdInternalPerfCudaLimitDisable"
 #endif
     },
-    {               /*  [56] */
+    {               /*  [57] */
 #if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x600u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
@@ -1046,13 +1069,13 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
         /*func=*/       "deviceCtrlCmdInternalPerfGetUnderpoweredGpuCount"
 #endif
     },
-    {               /*  [57] */
-#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0xe10u)
+    {               /*  [58] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0xe50u)
         /*pFunc=*/      (void (*)(void)) NULL,
 #else
         /*pFunc=*/      (void (*)(void)) deviceCtrlCmdInternalPerfCudaLimitSetControl_IMPL,
-#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0xe10u)
-        /*flags=*/      0xe10u,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0xe50u)
+        /*flags=*/      0xe50u,
         /*accessRight=*/0x0u,
         /*methodId=*/   0x802009u,
         /*paramSize=*/  sizeof(NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS),
@@ -1066,7 +1089,7 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_Device[]
 
 const struct NVOC_EXPORT_INFO __nvoc_export_info_Device = 
 {
-    /*numEntries=*/     58,
+    /*numEntries=*/     59,
     /*pExportEntries=*/ __nvoc_exported_method_def_Device
 };
 
@@ -1117,6 +1140,10 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
 
 #if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x200u)
     pThis->__deviceCtrlCmdBifAspmCyaUpdate__ = &deviceCtrlCmdBifAspmCyaUpdate_IMPL;
+#endif
+
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x200u)
+    pThis->__deviceCtrlCmdBifGetPciePowerControlMask__ = &deviceCtrlCmdBifGetPciePowerControlMask_IMPL;
 #endif
 
 #if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
@@ -1199,11 +1226,11 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
     pThis->__deviceCtrlCmdFbGetCompbitStoreInfo__ = &deviceCtrlCmdFbGetCompbitStoreInfo_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
     pThis->__deviceCtrlCmdFbGetCaps__ = &deviceCtrlCmdFbGetCaps_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x11u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4811u)
     pThis->__deviceCtrlCmdFbGetCapsV2__ = &deviceCtrlCmdFbGetCapsV2_IMPL;
 #endif
 
@@ -1231,7 +1258,7 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
     pThis->__deviceCtrlCmdFifoStartRunlist__ = &deviceCtrlCmdFifoStartRunlist_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
     pThis->__deviceCtrlCmdFifoGetChannelList__ = &deviceCtrlCmdFifoGetChannelList_IMPL;
 #endif
 
@@ -1247,15 +1274,15 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
     pThis->__deviceCtrlCmdFifoIdleChannels__ = &deviceCtrlCmdFifoIdleChannels_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x850u)
     pThis->__deviceCtrlCmdHostGetCaps__ = &deviceCtrlCmdHostGetCaps_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4850u)
     pThis->__deviceCtrlCmdHostGetCapsV2__ = &deviceCtrlCmdHostGetCapsV2_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0xe10u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0xe50u)
     pThis->__deviceCtrlCmdInternalPerfCudaLimitSetControl__ = &deviceCtrlCmdInternalPerfCudaLimitSetControl_IMPL;
 #endif
 
@@ -1275,7 +1302,7 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
     pThis->__deviceCtrlCmdGpuGetClasslistV2__ = &deviceCtrlCmdGpuGetClasslistV2_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x4811u)
     pThis->__deviceCtrlCmdGpuGetNumSubdevices__ = &deviceCtrlCmdGpuGetNumSubdevices_IMPL;
 #endif
 
@@ -1287,7 +1314,7 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
     pThis->__deviceCtrlCmdGpuQueryGpuSwStatePersistence__ = &deviceCtrlCmdGpuQueryGpuSwStatePersistence_IMPL;
 #endif
 
-#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x810u)
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x811u)
     pThis->__deviceCtrlCmdGpuGetVirtualizationMode__ = &deviceCtrlCmdGpuGetVirtualizationMode_IMPL;
 #endif
 
@@ -1345,41 +1372,45 @@ static void __nvoc_init_funcTable_Device_1(Device *pThis) {
 
     pThis->__deviceShareCallback__ = &__nvoc_thunk_GpuResource_deviceShareCallback;
 
+    pThis->__deviceCheckMemInterUnmap__ = &__nvoc_thunk_RmResource_deviceCheckMemInterUnmap;
+
+    pThis->__deviceMapTo__ = &__nvoc_thunk_RsResource_deviceMapTo;
+
+    pThis->__deviceGetMapAddrSpace__ = &__nvoc_thunk_GpuResource_deviceGetMapAddrSpace;
+
+    pThis->__deviceGetRefCount__ = &__nvoc_thunk_RsResource_deviceGetRefCount;
+
+    pThis->__deviceAddAdditionalDependants__ = &__nvoc_thunk_RsResource_deviceAddAdditionalDependants;
+
+    pThis->__deviceControl_Prologue__ = &__nvoc_thunk_RmResource_deviceControl_Prologue;
+
+    pThis->__deviceGetRegBaseOffsetAndSize__ = &__nvoc_thunk_GpuResource_deviceGetRegBaseOffsetAndSize;
+
+    pThis->__deviceUnmapFrom__ = &__nvoc_thunk_RsResource_deviceUnmapFrom;
+
+    pThis->__deviceControl_Epilogue__ = &__nvoc_thunk_RmResource_deviceControl_Epilogue;
+
+    pThis->__deviceControlLookup__ = &__nvoc_thunk_RsResource_deviceControlLookup;
+
+    pThis->__deviceGetInternalObjectHandle__ = &__nvoc_thunk_GpuResource_deviceGetInternalObjectHandle;
+
     pThis->__deviceUnmap__ = &__nvoc_thunk_GpuResource_deviceUnmap;
 
     pThis->__deviceGetMemInterMapParams__ = &__nvoc_thunk_RmResource_deviceGetMemInterMapParams;
 
     pThis->__deviceGetMemoryMappingDescriptor__ = &__nvoc_thunk_RmResource_deviceGetMemoryMappingDescriptor;
 
-    pThis->__deviceGetMapAddrSpace__ = &__nvoc_thunk_GpuResource_deviceGetMapAddrSpace;
-
-    pThis->__deviceGetInternalObjectHandle__ = &__nvoc_thunk_GpuResource_deviceGetInternalObjectHandle;
-
     pThis->__deviceControlFilter__ = &__nvoc_thunk_RsResource_deviceControlFilter;
 
-    pThis->__deviceAddAdditionalDependants__ = &__nvoc_thunk_RsResource_deviceAddAdditionalDependants;
-
-    pThis->__deviceGetRefCount__ = &__nvoc_thunk_RsResource_deviceGetRefCount;
-
-    pThis->__deviceCheckMemInterUnmap__ = &__nvoc_thunk_RmResource_deviceCheckMemInterUnmap;
-
-    pThis->__deviceMapTo__ = &__nvoc_thunk_RsResource_deviceMapTo;
-
-    pThis->__deviceControl_Prologue__ = &__nvoc_thunk_RmResource_deviceControl_Prologue;
-
-    pThis->__deviceGetRegBaseOffsetAndSize__ = &__nvoc_thunk_GpuResource_deviceGetRegBaseOffsetAndSize;
+    pThis->__deviceControlSerialization_Prologue__ = &__nvoc_thunk_RmResource_deviceControlSerialization_Prologue;
 
     pThis->__deviceCanCopy__ = &__nvoc_thunk_RsResource_deviceCanCopy;
 
     pThis->__devicePreDestruct__ = &__nvoc_thunk_RsResource_devicePreDestruct;
 
-    pThis->__deviceUnmapFrom__ = &__nvoc_thunk_RsResource_deviceUnmapFrom;
-
     pThis->__deviceIsDuplicate__ = &__nvoc_thunk_RsResource_deviceIsDuplicate;
 
-    pThis->__deviceControl_Epilogue__ = &__nvoc_thunk_RmResource_deviceControl_Epilogue;
-
-    pThis->__deviceControlLookup__ = &__nvoc_thunk_RsResource_deviceControlLookup;
+    pThis->__deviceControlSerialization_Epilogue__ = &__nvoc_thunk_RmResource_deviceControlSerialization_Epilogue;
 
     pThis->__deviceMap__ = &__nvoc_thunk_GpuResource_deviceMap;
 
@@ -1407,12 +1438,15 @@ NV_STATUS __nvoc_objCreate_Device(Device **ppThis, Dynamic *pParent, NvU32 creat
     Object *pParentObj;
     Device *pThis;
 
-    pThis = portMemAllocNonPaged(sizeof(Device));
-    if (pThis == NULL) return NV_ERR_NO_MEMORY;
+    status = __nvoc_handleObjCreateMemAlloc(createFlags, sizeof(Device), (void**)&pThis, (void**)ppThis);
+    if (status != NV_OK)
+        return status;
 
     portMemSet(pThis, 0, sizeof(Device));
 
     __nvoc_initRtti(staticCast(pThis, Dynamic), &__nvoc_class_def_Device);
+
+    pThis->__nvoc_base_GpuResource.__nvoc_base_RmResource.__nvoc_base_RsResource.__nvoc_base_Object.createFlags = createFlags;
 
     if (pParent != NULL && !(createFlags & NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY))
     {
@@ -1429,11 +1463,17 @@ NV_STATUS __nvoc_objCreate_Device(Device **ppThis, Dynamic *pParent, NvU32 creat
     if (status != NV_OK) goto __nvoc_objCreate_Device_cleanup;
 
     *ppThis = pThis;
+
     return NV_OK;
 
 __nvoc_objCreate_Device_cleanup:
     // do not call destructors here since the constructor already called them
-    portMemFree(pThis);
+    if (createFlags & NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT)
+        portMemSet(pThis, 0, sizeof(Device));
+    else
+        portMemFree(pThis);
+
+    // coverity[leaked_storage:FALSE]
     return status;
 }
 

@@ -135,12 +135,12 @@ static NvBool __nvoc_thunk_GpuResource_kchannelShareCallback(struct KernelChanne
     return gpuresShareCallback((struct GpuResource *)(((unsigned char *)pGpuResource) + __nvoc_rtti_KernelChannel_GpuResource.offset), pInvokingClient, pParentRef, pSharePolicy);
 }
 
-static NV_STATUS __nvoc_thunk_RsResource_kchannelMapTo(struct KernelChannel *pResource, RS_RES_MAP_TO_PARAMS *pParams) {
-    return resMapTo((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_KernelChannel_RsResource.offset), pParams);
-}
-
 static NV_STATUS __nvoc_thunk_Notifier_kchannelGetOrAllocNotifShare(struct KernelChannel *pNotifier, NvHandle hNotifierClient, NvHandle hNotifierResource, struct NotifShare **ppNotifShare) {
     return notifyGetOrAllocNotifShare((struct Notifier *)(((unsigned char *)pNotifier) + __nvoc_rtti_KernelChannel_Notifier.offset), hNotifierClient, hNotifierResource, ppNotifShare);
+}
+
+static NV_STATUS __nvoc_thunk_RsResource_kchannelMapTo(struct KernelChannel *pResource, RS_RES_MAP_TO_PARAMS *pParams) {
+    return resMapTo((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_KernelChannel_RsResource.offset), pParams);
 }
 
 static void __nvoc_thunk_Notifier_kchannelSetNotificationShare(struct KernelChannel *pNotifier, struct NotifShare *pNotifShare) {
@@ -199,6 +199,10 @@ static NV_STATUS __nvoc_thunk_Notifier_kchannelUnregisterEvent(struct KernelChan
     return notifyUnregisterEvent((struct Notifier *)(((unsigned char *)pNotifier) + __nvoc_rtti_KernelChannel_Notifier.offset), hNotifierClient, hNotifierResource, hEventClient, hEvent);
 }
 
+static NV_STATUS __nvoc_thunk_RmResource_kchannelControlSerialization_Prologue(struct KernelChannel *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    return rmresControlSerialization_Prologue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_KernelChannel_RmResource.offset), pCallContext, pParams);
+}
+
 static NvBool __nvoc_thunk_RsResource_kchannelCanCopy(struct KernelChannel *pResource) {
     return resCanCopy((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_KernelChannel_RsResource.offset));
 }
@@ -209,6 +213,10 @@ static void __nvoc_thunk_RsResource_kchannelPreDestruct(struct KernelChannel *pR
 
 static NV_STATUS __nvoc_thunk_RsResource_kchannelIsDuplicate(struct KernelChannel *pResource, NvHandle hMemory, NvBool *pDuplicate) {
     return resIsDuplicate((struct RsResource *)(((unsigned char *)pResource) + __nvoc_rtti_KernelChannel_RsResource.offset), hMemory, pDuplicate);
+}
+
+static void __nvoc_thunk_RmResource_kchannelControlSerialization_Epilogue(struct KernelChannel *pResource, struct CALL_CONTEXT *pCallContext, struct RS_RES_CONTROL_PARAMS_INTERNAL *pParams) {
+    rmresControlSerialization_Epilogue((struct RmResource *)(((unsigned char *)pResource) + __nvoc_rtti_KernelChannel_RmResource.offset), pCallContext, pParams);
 }
 
 static PEVENTNOTIFICATION *__nvoc_thunk_Notifier_kchannelGetNotificationListPtr(struct KernelChannel *pNotifier) {
@@ -949,12 +957,42 @@ static const struct NVOC_EXPORTED_METHOD_DEF __nvoc_exported_method_def_KernelCh
         /*func=*/       "kchannelCtrlCmdGpfifoSetWorkSubmitTokenNotifIndex"
 #endif
     },
+    {               /*  [48] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
+        /*pFunc=*/      (void (*)(void)) NULL,
+#else
+        /*pFunc=*/      (void (*)(void)) kchannelCtrlCmdGetKmb_IMPL,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
+        /*flags=*/      0x2210u,
+        /*accessRight=*/0x0u,
+        /*methodId=*/   0xc56f010bu,
+        /*paramSize=*/  sizeof(NVC56F_CTRL_CMD_GET_KMB_PARAMS),
+        /*pClassInfo=*/ &(__nvoc_class_def_KernelChannel.classInfo),
+#if NV_PRINTF_STRINGS_ALLOWED
+        /*func=*/       "kchannelCtrlCmdGetKmb"
+#endif
+    },
+    {               /*  [49] */
+#if NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
+        /*pFunc=*/      (void (*)(void)) NULL,
+#else
+        /*pFunc=*/      (void (*)(void)) kchannelCtrlRotateSecureChannelIv_IMPL,
+#endif // NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
+        /*flags=*/      0x2210u,
+        /*accessRight=*/0x0u,
+        /*methodId=*/   0xc56f010cu,
+        /*paramSize=*/  sizeof(NVC56F_CTRL_ROTATE_SECURE_CHANNEL_IV_PARAMS),
+        /*pClassInfo=*/ &(__nvoc_class_def_KernelChannel.classInfo),
+#if NV_PRINTF_STRINGS_ALLOWED
+        /*func=*/       "kchannelCtrlRotateSecureChannelIv"
+#endif
+    },
 
 };
 
 const struct NVOC_EXPORT_INFO __nvoc_export_info_KernelChannel = 
 {
-    /*numEntries=*/     48,
+    /*numEntries=*/     50,
     /*pExportEntries=*/ __nvoc_exported_method_def_KernelChannel
 };
 
@@ -1027,27 +1065,27 @@ static void __nvoc_init_funcTable_KernelChannel_1(KernelChannel *pThis, RmHalspe
     pThis->__kchannelCheckMemInterUnmap__ = &kchannelCheckMemInterUnmap_IMPL;
 
     // Hal function -- kchannelCreateUserMemDesc
-    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0ffe0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 | GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
-    {
-        pThis->__kchannelCreateUserMemDesc__ = &kchannelCreateUserMemDesc_GM107;
-    }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
     {
         pThis->__kchannelCreateUserMemDesc__ = &kchannelCreateUserMemDesc_GA10B;
     }
+    else
+    {
+        pThis->__kchannelCreateUserMemDesc__ = &kchannelCreateUserMemDesc_GM107;
+    }
 
     // Hal function -- kchannelIsUserdAddrSizeValid
-    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x000003e0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 */ 
+    if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
+    {
+        pThis->__kchannelIsUserdAddrSizeValid__ = &kchannelIsUserdAddrSizeValid_GH100;
+    }
+    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x000003e0UL) )) /* ChipHal: TU102 | TU104 | TU106 | TU116 | TU117 */ 
     {
         pThis->__kchannelIsUserdAddrSizeValid__ = &kchannelIsUserdAddrSizeValid_GV100;
     }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x01f0fc00UL) )) /* ChipHal: GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 | AD106 | AD107 */ 
+    else
     {
         pThis->__kchannelIsUserdAddrSizeValid__ = &kchannelIsUserdAddrSizeValid_GA100;
-    }
-    else if (( ((chipHal_HalVarIdx >> 5) == 1UL) && ((1UL << (chipHal_HalVarIdx & 0x1f)) & 0x10000000UL) )) /* ChipHal: GH100 */ 
-    {
-        pThis->__kchannelIsUserdAddrSizeValid__ = &kchannelIsUserdAddrSizeValid_GH100;
     }
 
 #if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
@@ -1226,6 +1264,14 @@ static void __nvoc_init_funcTable_KernelChannel_1(KernelChannel *pThis, RmHalspe
     pThis->__kchannelCtrlCmdStopChannel__ = &kchannelCtrlCmdStopChannel_IMPL;
 #endif
 
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
+    pThis->__kchannelCtrlCmdGetKmb__ = &kchannelCtrlCmdGetKmb_IMPL;
+#endif
+
+#if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x2210u)
+    pThis->__kchannelCtrlRotateSecureChannelIv__ = &kchannelCtrlRotateSecureChannelIv_IMPL;
+#endif
+
 #if !NVOC_EXPORTED_METHOD_DISABLED_BY_FLAG(0x10u)
     pThis->__kchannelCtrlGetTpcPartitionMode__ = &kchannelCtrlGetTpcPartitionMode_a094e1;
 #endif
@@ -1254,9 +1300,9 @@ static void __nvoc_init_funcTable_KernelChannel_1(KernelChannel *pThis, RmHalspe
 
     pThis->__kchannelShareCallback__ = &__nvoc_thunk_GpuResource_kchannelShareCallback;
 
-    pThis->__kchannelMapTo__ = &__nvoc_thunk_RsResource_kchannelMapTo;
-
     pThis->__kchannelGetOrAllocNotifShare__ = &__nvoc_thunk_Notifier_kchannelGetOrAllocNotifShare;
+
+    pThis->__kchannelMapTo__ = &__nvoc_thunk_RsResource_kchannelMapTo;
 
     pThis->__kchannelSetNotificationShare__ = &__nvoc_thunk_Notifier_kchannelSetNotificationShare;
 
@@ -1286,11 +1332,15 @@ static void __nvoc_init_funcTable_KernelChannel_1(KernelChannel *pThis, RmHalspe
 
     pThis->__kchannelUnregisterEvent__ = &__nvoc_thunk_Notifier_kchannelUnregisterEvent;
 
+    pThis->__kchannelControlSerialization_Prologue__ = &__nvoc_thunk_RmResource_kchannelControlSerialization_Prologue;
+
     pThis->__kchannelCanCopy__ = &__nvoc_thunk_RsResource_kchannelCanCopy;
 
     pThis->__kchannelPreDestruct__ = &__nvoc_thunk_RsResource_kchannelPreDestruct;
 
     pThis->__kchannelIsDuplicate__ = &__nvoc_thunk_RsResource_kchannelIsDuplicate;
+
+    pThis->__kchannelControlSerialization_Epilogue__ = &__nvoc_thunk_RmResource_kchannelControlSerialization_Epilogue;
 
     pThis->__kchannelGetNotificationListPtr__ = &__nvoc_thunk_Notifier_kchannelGetNotificationListPtr;
 
@@ -1325,12 +1375,15 @@ NV_STATUS __nvoc_objCreate_KernelChannel(KernelChannel **ppThis, Dynamic *pParen
     KernelChannel *pThis;
     RmHalspecOwner *pRmhalspecowner;
 
-    pThis = portMemAllocNonPaged(sizeof(KernelChannel));
-    if (pThis == NULL) return NV_ERR_NO_MEMORY;
+    status = __nvoc_handleObjCreateMemAlloc(createFlags, sizeof(KernelChannel), (void**)&pThis, (void**)ppThis);
+    if (status != NV_OK)
+        return status;
 
     portMemSet(pThis, 0, sizeof(KernelChannel));
 
     __nvoc_initRtti(staticCast(pThis, Dynamic), &__nvoc_class_def_KernelChannel);
+
+    pThis->__nvoc_base_GpuResource.__nvoc_base_RmResource.__nvoc_base_RsResource.__nvoc_base_Object.createFlags = createFlags;
 
     if (pParent != NULL && !(createFlags & NVOC_OBJ_CREATE_FLAGS_PARENT_HALSPEC_ONLY))
     {
@@ -1351,11 +1404,17 @@ NV_STATUS __nvoc_objCreate_KernelChannel(KernelChannel **ppThis, Dynamic *pParen
     if (status != NV_OK) goto __nvoc_objCreate_KernelChannel_cleanup;
 
     *ppThis = pThis;
+
     return NV_OK;
 
 __nvoc_objCreate_KernelChannel_cleanup:
     // do not call destructors here since the constructor already called them
-    portMemFree(pThis);
+    if (createFlags & NVOC_OBJ_CREATE_FLAGS_IN_PLACE_CONSTRUCT)
+        portMemSet(pThis, 0, sizeof(KernelChannel));
+    else
+        portMemFree(pThis);
+
+    // coverity[leaked_storage:FALSE]
     return status;
 }
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2013-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2013-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -72,6 +72,12 @@ kbifConstructEngine_IMPL
 
     // Disables P2P on VF
     kbifDisableP2PTransactions_HAL(pGpu, pKernelBif);
+
+    // Cache MNOC interface support
+    kbifIsMnocSupported_HAL(pGpu, pKernelBif);
+
+    // Cache VF info
+    kbifCacheVFInfo_HAL(pGpu, pKernelBif);
 
     // Used to track when the link has gone into Recovery, which can cause CEs.
     pKernelBif->EnteredRecoverySinceErrorsLastChecked = NV_FALSE;
@@ -245,6 +251,7 @@ kbifStateUnload_IMPL
     NvU32      flags
 )
 {
+
     return NV_OK;
 }
 
@@ -372,7 +379,7 @@ kbifInitPcieDeviceControlStatus
         kbifPcieConfigDisableRelaxedOrdering_HAL(pGpu, pKernelBif);
     }
 
-    // 
+    //
     // WAR for bug 3661529. All GH100 SKUs will need the NoSnoop WAR.
     // But currently GSP-RM does not detect this correctly,
     //
@@ -515,7 +522,7 @@ kbifIsMSIXEnabled_IMPL
 }
 
 /*!
- * @brief Clear PCIe HW PCIe config space error counters. 
+ * @brief Clear PCIe HW PCIe config space error counters.
  * All of these should be cleared using config cycles.
  *
  * @param[in]   pGpu          GPU object pointer
@@ -729,8 +736,8 @@ _kbifCheckIfGpuExists
     }
 }
 
-static NvU32
-kbifGetGpuLinkCapabilities
+NvU32
+kbifGetGpuLinkCapabilities_IMPL
 (
     OBJGPU    *pGpu,
     KernelBif *pKernelBif
@@ -753,8 +760,8 @@ kbifGetGpuLinkCapabilities
     return data;
 }
 
-static NvU32
-kbifGetGpuLinkControlStatus
+NvU32
+kbifGetGpuLinkControlStatus_IMPL
 (
     OBJGPU    *pGpu,
     KernelBif *pKernelBif
@@ -780,7 +787,7 @@ kbifGetGpuLinkControlStatus
 static NvBool
 _doesBoardHaveMultipleGpusAndSwitch(OBJGPU *pGpu)
 {
-    if (((gpuIsMultiGpuBoard(pGpu, NULL)) ||
+    if (((gpuIsMultiGpuBoard(pGpu)) ||
         (pGpu->getProperty(pGpu, PDB_PROP_GPU_IS_GEMINI)))&&
         ((pGpu->getProperty(pGpu, PDB_PROP_GPU_IS_PLX_PRESENT))  ||
          (pGpu->getProperty(pGpu, PDB_PROP_GPU_IS_BR03_PRESENT)) ||
@@ -809,8 +816,8 @@ kbifControlGetPCIEInfo_IMPL
 
     if (kbifGetBusIntfType_HAL(pKernelBif) != NV2080_CTRL_BUS_INFO_TYPE_PCI_EXPRESS)
     {
-        // KMD cannot handle error codes for this ctrl call, hence returning 
-        // NV_OK, once KMD fixes the bug:3545197, RM can return NV_ERR_NOT_SUPPORTED 
+        // KMD cannot handle error codes for this ctrl call, hence returning
+        // NV_OK, once KMD fixes the bug:3545197, RM can return NV_ERR_NOT_SUPPORTED
         return NV_OK;
     }
 
@@ -936,7 +943,7 @@ kbifControlGetPCIEInfo_IMPL
                 {
                     NV2080_CTRL_BUS_INFO busInfo = {0};
                     NV_STATUS rmStatus = NV_OK;
- 
+
                     busInfo.index = NV2080_CTRL_BUS_INFO_INDEX_PCIE_GEN_INFO;
 
                     if ((rmStatus = kbusSendBusInfo(pGpu, GPU_GET_KERNEL_BUS(pGpu), &busInfo)) != NV_OK)
@@ -1114,3 +1121,40 @@ kbifControlGetPCIEInfo_IMPL
     pBusInfo->data = data;
     return NV_OK;
 }
+
+/*!
+ * @brief To ensure GPU is back on bus and accessible by polling device ID
+ *
+ * @param[in]  pGpu        GPU object pointer
+ * @param[in]  pKernelBif  Kernel BIF object pointer
+ *
+ * @returns NV_OK
+ * @returns NV_ERR_TIMEOUT
+ */
+NV_STATUS
+kbifPollDeviceOnBus_IMPL
+(
+    OBJGPU     *pGpu,
+    KernelBif  *pKernelBif
+)
+{
+    RMTIMEOUT timeout;
+
+    gpuSetTimeout(pGpu, GPU_TIMEOUT_DEFAULT, &timeout, 0);
+
+    while (osPciInitHandle(gpuGetDomain(pGpu),
+                           gpuGetBus(pGpu),
+                           gpuGetDevice(pGpu), 0, NULL, NULL) == NULL)
+    {
+        if (gpuCheckTimeout(pGpu, &timeout) == NV_ERR_TIMEOUT)
+        {
+            NV_PRINTF(LEVEL_ERROR, "Timeout polling GPU back on bus\n");
+            DBG_BREAKPOINT();
+            return NV_ERR_TIMEOUT;
+        }
+        osDelayUs(100);
+    }
+
+    return NV_OK;
+}
+

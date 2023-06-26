@@ -270,7 +270,6 @@ _virtmemCopyConstruct
  * @brief
  *     This routine provides common allocation services used by the
  *     following heap allocation functions:
- *       NVOS32_FUNCTION_ALLOC_DEPTH_WIDTH_HEIGHT
  *       NVOS32_FUNCTION_ALLOC_SIZE
  *       NVOS32_FUNCTION_ALLOC_SIZE_RANGE
  *       NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT
@@ -947,7 +946,7 @@ NV_STATUS virtmemReserveMempool_IMPL
     OBJGPU        *pGpu,
     NvHandle       hDevice,
     NvU64          size,
-    NvU32          pageSizeMask
+    NvU64          pageSizeMask
 )
 {
     RsClient   *pClient = RES_GET_CLIENT(pVirtualMemory);
@@ -1089,18 +1088,25 @@ _virtmemAllocKernelMapping
         else
         {
             KernelBus *pKernelBus = GPU_GET_KERNEL_BUS(pGpu);
-            NvHandle hClient = NV01_NULL_OBJECT;
+            Device *pDevice = NULL;
             CALL_CONTEXT *pCallContext = resservGetTlsCallContext();
             if ((pCallContext != NULL) && (pCallContext->pClient != NULL))
             {
-                hClient = pCallContext->pClient->hClient;
+                RsResourceRef *pDeviceRef = NULL;
+
+                status = refFindAncestorOfType(pCallContext->pResourceRef,
+                                               classId(Device), &pDeviceRef);
+                if (status == NV_OK)
+                {
+                    pDevice = dynamicCast(pDeviceRef->pResource, Device);
+                }
             }
 
             status = kbusMapFbAperture_HAL(pGpu, pKernelBus,
                                            pMemoryInfo->pMemDesc, offset,
                                            &pDmaMappingInfo->FbAperture[gpuSubDevInst],
                                            &pDmaMappingInfo->FbApertureLen[gpuSubDevInst],
-                                           BUS_MAP_FB_FLAGS_MAP_UNICAST, hClient);
+                                           BUS_MAP_FB_FLAGS_MAP_UNICAST, pDevice);
 
             if (status != NV_OK)
             {
@@ -1234,7 +1240,6 @@ virtmemMapTo_IMPL
 
     NvBool      bDmaMapNeeded         = pParams->bDmaMapNeeded;
     NvBool      bDmaMapped            = NV_FALSE;
-    NvBool      bDmaUnmapped          = NV_FALSE;
     NvBool      bDmaMappingRegistered = NV_FALSE;
     NvBool      bFlaMapping           = pParams->bFlaMapping;
     NvBool      bIsIndirectPeer       = NV_FALSE;
@@ -1270,7 +1275,7 @@ virtmemMapTo_IMPL
     if (offset + length > pSrcMemDesc->Size)
         return NV_ERR_INVALID_BASE;
 
-    status = intermapCreateDmaMapping(pClient, pMemoryRef, hBroadcastDevice, hVirtualMem, &pDmaMappingInfo, flags);
+    status = intermapCreateDmaMapping(pClient, pVirtualMemory, &pDmaMappingInfo, flags);
     if (status != NV_OK)
         return status;
 
@@ -1323,19 +1328,12 @@ virtmemMapTo_IMPL
 
     // Different cases for vidmem & system memory/fabric memory.
     bIsSysmem = (tgtAddressSpace == ADDR_SYSMEM);
+    bIsSysmem = bIsSysmem || (tgtAddressSpace == ADDR_EGM);
 
     if (bIsSysmem ||
         (tgtAddressSpace == ADDR_FABRIC_MC) ||
         (tgtAddressSpace == ADDR_FABRIC_V2))
     {
-        // offset needs to be 0 when reusing a mapping.
-        if ((DRF_VAL(OS46, _FLAGS, _DMA_UNICAST_REUSE_ALLOC, flags) == NVOS46_FLAGS_DMA_UNICAST_REUSE_ALLOC_TRUE) &&
-            (offset != 0))
-        {
-            status = NV_ERR_INVALID_OFFSET;
-            goto done;
-        }
-
         //
         // Create a MEMORY_DESCRIPTOR describing this region of the memory
         // alloc in question
@@ -1415,7 +1413,7 @@ virtmemMapTo_IMPL
             if (status != NV_OK)
                 goto done;
 
-            status = intermapRegisterDmaMapping(pClient, hBroadcastDevice, hVirtualMem, pDmaMappingInfo, pDmaMappingInfo->DmaOffset, gpuMask);
+            status = intermapRegisterDmaMapping(pClient, pVirtualMemory, pDmaMappingInfo, pDmaMappingInfo->DmaOffset, gpuMask);
             if (status != NV_OK)
             {
                 dmaFreeMap(pGpu, pDma, pVas,
@@ -1484,7 +1482,7 @@ virtmemMapTo_IMPL
 
             *pDmaOffset = pDmaMappingInfo->DmaOffset;
 
-            status = intermapRegisterDmaMapping(pClient, hBroadcastDevice, hVirtualMem, pDmaMappingInfo, pDmaMappingInfo->DmaOffset, gpuMask);
+            status = intermapRegisterDmaMapping(pClient, pVirtualMemory, pDmaMappingInfo, pDmaMappingInfo->DmaOffset, gpuMask);
             if (status != NV_OK)
             {
                 dmaFreeMap(pGpu, pDma, pVas,
@@ -1553,7 +1551,7 @@ vgpu_send_rpc:
 
             pDmaMappingInfo->DmaOffset = *pDmaOffset;
 
-            status = intermapRegisterDmaMapping(pClient, hBroadcastDevice, hVirtualMem, pDmaMappingInfo,
+            status = intermapRegisterDmaMapping(pClient, pVirtualMemory, pDmaMappingInfo,
                                                 pDmaMappingInfo->DmaOffset, gpuMask);
             if (status != NV_OK)
                 goto done;
@@ -1630,11 +1628,11 @@ done:
 
             if (bDmaMappingRegistered)
             {
-                intermapDelDmaMapping(pClient, hBroadcastDevice, hVirtualMem, *pDmaOffset, gpuMask, &bDmaUnmapped);
+                NV_ASSERT_OK(intermapDelDmaMapping(pClient, pVirtualMemory, *pDmaOffset, gpuMask));
             }
-            if (!bDmaUnmapped)
+            else
             {
-                // Explicitly free the DMA mapping if intermapDelDmaMapping was not able to clean up
+                // Explicitly free the DMA mapping if mapping was not yet registered
                 intermapFreeDmaMapping(pDmaMappingInfo);
             }
         }
@@ -1665,7 +1663,6 @@ virtmemUnmapFrom_IMPL
     OBJVASPACE *pVas              = NULL;
     NV_STATUS   status            = NV_OK;
     NvBool      bIsIndirectPeer   = NV_FALSE;
-    NvBool      bReturnStatus;
 
     CLI_DMA_MAPPING_INFO *pDmaMappingInfo   = NULL;
 
@@ -1702,9 +1699,8 @@ virtmemUnmapFrom_IMPL
         return status;
 
     // Get DMA mapping info.
-    bReturnStatus = CliGetDmaMappingInfo(hClient, hBroadcastDevice, hVirtualMem, dmaOffset, gpuMask, &pDmaMappingInfo);
-    if (!bReturnStatus)
-        return NV_ERR_INVALID_OBJECT_HANDLE;
+    pDmaMappingInfo = intermapGetDmaMapping(pVirtualMemory, dmaOffset, gpuMask);
+    NV_ASSERT_OR_RETURN(pDmaMappingInfo != NULL, NV_ERR_INVALID_OBJECT_HANDLE);
 
     //
     // if Kernel cookie exists and mapping is in sysmem, free sysmem mapping
@@ -1756,19 +1752,13 @@ virtmemUnmapFrom_IMPL
         }
     }
 
-    while (bReturnStatus)
-    {
-        // free memory descriptor
-        memdescFree(pDmaMappingInfo->pMemDesc);
-        memdescDestroy(pDmaMappingInfo->pMemDesc);
-        pDmaMappingInfo->pMemDesc = NULL;
+    // free memory descriptor
+    memdescFree(pDmaMappingInfo->pMemDesc);
+    memdescDestroy(pDmaMappingInfo->pMemDesc);
+    pDmaMappingInfo->pMemDesc = NULL;
 
-        // delete client dma mapping
-        intermapDelDmaMapping(pClient, hBroadcastDevice, hVirtualMem, dmaOffset, gpuMask, NULL);
-
-        // Get the next DMA mapping info for this offset and gpu mask
-        bReturnStatus = CliGetDmaMappingInfo(hClient, hBroadcastDevice, hVirtualMem, dmaOffset, gpuMask, &pDmaMappingInfo);
-    }
+    // delete client dma mapping
+    intermapDelDmaMapping(pClient, pVirtualMemory, dmaOffset, gpuMask);
 
     //
     // vGPU:

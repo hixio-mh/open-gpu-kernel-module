@@ -104,7 +104,7 @@ _9074TimedSemRelease
 (
     OBJGPU     *pGpu,
     ChannelDescendant *pObject,
-    NvHandle    hClient,
+    RsClient   *pClient,
     NvU64       notifierGPUVA,
     NvU64       semaphoreGPUVA,
     NvU64       time,
@@ -122,7 +122,7 @@ _9074TimedSemRelease
                               pObject->pKernelChannel->hVASpace,
                               releaseValue,
                               notifierStatus,
-                              hClient);
+                              pClient);
 
     // timedSemaphoreRelease_HAL will print errors on its own
     if (status != NV_OK)
@@ -183,7 +183,7 @@ _9074TimedSemRequest
         {
             status = _9074TimedSemRelease(pGpu,
                         pObject,
-                        RES_GET_CLIENT_HANDLE(pTimedSemSw),
+                        RES_GET_CLIENT(pTimedSemSw),
                         notifierGPUVA,
                         semaphoreGPUVA,
                         currentTime,
@@ -339,7 +339,6 @@ static NV_STATUS _class9074SetNotifierHi
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -358,7 +357,6 @@ static NV_STATUS _class9074SetNotifierLo
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -394,7 +392,6 @@ static NV_STATUS _class9074SetSemaphoreHi
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -413,7 +410,6 @@ static NV_STATUS _class9074SetSemaphoreLo
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -449,7 +445,6 @@ static NV_STATUS _class9074SetWaitTimestampHi
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -468,7 +463,6 @@ static NV_STATUS _class9074SetWaitTimestampLo
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -497,7 +491,6 @@ static NV_STATUS _class9074SetSemaphoreReleaseValue
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -516,7 +509,6 @@ static NV_STATUS _class9074ScheduleSemaphoreRelease
 (
     OBJGPU *pGpu,
     ChannelDescendant *pObject,
-    PMETHOD pMethod,
     NvU32   Offset,
     NvU32   Data
 )
@@ -576,7 +568,7 @@ static NV_STATUS _class9074TimerCallback
 
         status = _9074TimedSemRelease(pGpu,
                     pObject,
-                    RES_GET_CLIENT_HANDLE(pTimedSemSw),
+                    RES_GET_CLIENT(pTimedSemSw),
                     pTimedSemEntry->NotifierGPUVA,
                     pTimedSemEntry->SemaphoreGPUVA,
                     currentTime,
@@ -599,7 +591,7 @@ static NV_STATUS _class9074TimerCallback
 } // end of _class9074TimerCallback
 
 // GF100_TIMED_SEMAPHORE_SW
-static METHOD GF100TimedSemSwMethods[] =
+static const METHOD GF100TimedSemSwMethods[] =
 {
     { mthdNoOperation,                    0x0100, 0x0103 },
     { _class9074SetNotifierHi,            0x0140, 0x0143 },
@@ -615,12 +607,12 @@ static METHOD GF100TimedSemSwMethods[] =
 NV_STATUS tsemaGetSwMethods_IMPL
 (
     TimedSemaSwObject *pTimedSemSw,
-    METHOD           **ppMethods,
+    const METHOD     **ppMethods,
     NvU32             *pNumMethods
 )
 {
     *ppMethods = GF100TimedSemSwMethods;
-    *pNumMethods = NV_ARRAY_ELEMENTS32(GF100TimedSemSwMethods);
+    *pNumMethods = NV_ARRAY_ELEMENTS(GF100TimedSemSwMethods);
     return NV_OK;
 }
 
@@ -633,7 +625,7 @@ tsemaRelease_KERNEL
     NvU32 hVASpace,
     NvU32 releaseValue,
     NvU32 completionStatus,
-    NvHandle hClient
+    RsClient *pClient
 )
 {
     OBJTMR   *pTmr = GPU_GET_TIMER(pGpu);
@@ -644,7 +636,7 @@ tsemaRelease_KERNEL
     tmrGetCurrentTime(pTmr, &currentTime);
 
     status = semaphoreFillGPUVATimestamp(pGpu,
-                                         hClient,
+                                         pClient,
                                          hVASpace,
                                          semaphoreVA,
                                          releaseValue,
@@ -660,7 +652,7 @@ tsemaRelease_KERNEL
     }
 
     status = notifyFillNotifierGPUVATimestamp(pGpu,
-                                              hClient,
+                                              pClient,
                                               hVASpace,
                                               notifierVA,
                                               0, /* Info32 */

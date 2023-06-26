@@ -43,7 +43,6 @@
 /* ------------------ static and helper functions prototypes------------------*/
 static NvU32 translateAllocFlagsToVASpaceFlags(NvU32 allocFlags, NvU32 *translatedFlags);
 static NvU32 translatePageSizeToVASpaceFlags(NV_VASPACE_ALLOCATION_PARAMETERS *pNvVASpaceAllocParams);
-static void destroyMemDesc(Device *pDevice, NvHandle hVASpace);
 static NV_STATUS _vaspaceapiManagePageLevelsForSplitVaSpace(OBJGPU *pGpu, NvHandle hClient, NvU32 gpuMask, NvU32 flags, VASPACEAPI_MANAGE_PAGE_LEVELS_ACTION action);
 
 NvBool
@@ -81,6 +80,8 @@ vaspaceapiConstruct_IMPL
     NvBool                            bLockAcquired         = NV_FALSE;
     MemoryManager                    *pMemoryManager        = GPU_GET_MEMORY_MANAGER(pGpu);
     KernelMIGManager                 *pKernelMIGManager     = GPU_GET_KERNEL_MIG_MANAGER(pGpu);
+    NvU64                             originalVaBase;
+    NvU64                             originalVaSize;
 
     if (RS_IS_COPY_CTOR(pParams))
     {
@@ -115,6 +116,10 @@ vaspaceapiConstruct_IMPL
 
     pNvVASpaceAllocParams = pParams->pAllocParams;
     allocFlags            = pNvVASpaceAllocParams->flags;
+
+    // These input parameters get overwritten later but original values are needed
+    originalVaBase = pNvVASpaceAllocParams->vaBase;
+    originalVaSize = pNvVASpaceAllocParams->vaSize;
 
     // Translate & validate flags
     NV_CHECK_OK_OR_RETURN(LEVEL_WARNING, translateAllocFlagsToVASpaceFlags(allocFlags, &flags));
@@ -219,7 +224,7 @@ vaspaceapiConstruct_IMPL
             {
                 // In case of SR-IOV, the BAR1 and FLA is managed by the guest. So, no need
                 // to communicate with the host for BAR1 and FLA VA.
-                if ((pNvVASpaceAllocParams->index == NV_VASPACE_ALLOCATION_INDEX_GPU_HOST))
+                if (pNvVASpaceAllocParams->index == NV_VASPACE_ALLOCATION_INDEX_GPU_HOST)
                     bSendRPC = NV_FALSE;
             }
 
@@ -237,6 +242,7 @@ vaspaceapiConstruct_IMPL
                                    pParams->hResource,
                                    pParams->externalClassId,
                                    pNvVASpaceAllocParams,
+                                   sizeof(*pNvVASpaceAllocParams),
                                    status);
             if (status != NV_OK)
             {
@@ -328,34 +334,45 @@ vaspaceapiConstruct_IMPL
         // Get flags for the requested big page size
         flags |= translatePageSizeToVASpaceFlags(pNvVASpaceAllocParams);
 
-        if (0 != pNvVASpaceAllocParams->vaSize)
+        if (0 != originalVaSize)
         {
             // FLA VASpace can start from any base (!= 0)
             if (flags & VASPACE_FLAGS_FLA)
             {
-                vasLimit = pNvVASpaceAllocParams->vaBase +
-                           pNvVASpaceAllocParams->vaSize - 1;
-                if (vasLimit < pNvVASpaceAllocParams->vaBase)
+                vasLimit = originalVaBase + originalVaSize - 1;
+                if (vasLimit < originalVaBase)
                 {
                     NV_PRINTF(LEVEL_ERROR,
                               "Integer overflow !!! Invalid parameters for vaBase:%llx, vaSize:%llx\n",
-                              pNvVASpaceAllocParams->vaBase,
-                              pNvVASpaceAllocParams->vaSize);
+                              originalVaBase,
+                              originalVaSize);
                     status = NV_ERR_INVALID_ARGUMENT;
                     NV_ASSERT_OR_GOTO(0, done);
                 }
             }
             else
             {
-                vasLimit = pNvVASpaceAllocParams->vaSize - 1;
+                vasLimit = originalVaSize - 1;
             }
+        }
+
+        //
+        // Bug 3610538 For unlinked SLI, clients want to restrict internal buffers to
+        // Internal VA range. setting internal va range to match what we use for
+        // windows.
+        //
+        if (allocFlags & NV_VASPACE_ALLOCATION_FLAGS_VA_INTERNAL_LIMIT)
+        {
+            vaStartInternal = SPLIT_VAS_SERVER_RM_MANAGED_VA_START;
+            vaLimitInternal = SPLIT_VAS_SERVER_RM_MANAGED_VA_START +
+                              SPLIT_VAS_SERVER_RM_MANAGED_VA_SIZE - 1;
         }
 
         // Finally call the factory
         status = vmmCreateVaspace(pVmm, pParams->externalClassId,
                                   pNvVASpaceAllocParams->index,
                                   gpuMask,
-                                  pNvVASpaceAllocParams->vaBase,
+                                  originalVaBase,
                                   vasLimit,
                                   vaStartInternal,
                                   vaLimitInternal,
@@ -522,7 +539,6 @@ vaspaceapiDestruct_IMPL(VaSpaceApi *pVaspaceApi)
                                                          VASPACEAPI_MANAGE_PAGE_LEVELS_RELEASE);
     }
 
-    destroyMemDesc(pDevice, hVASpace);
     if ((vaspaceGetFlags(pVaspaceApi->pVASpace) & VASPACE_FLAGS_FLA))
     {
         if (GPU_GET_KERNEL_BUS(pGpu)->flaInfo.pFlaVAS == NULL)
@@ -559,52 +575,6 @@ skip_destroy:
               RES_GET_HANDLE(pDevice), hClient,
               pCallContext->pResourceRef,
               pCallContext->pResourceRef->pParentRef);
-}
-
-/*--------------------------static and helper functions ----------------------*/
-// move this to Device
-/**
- * @brief Destroy associated memory with this vaspace.
- *
- * @param[in] pDevice  Pointer to Device instance
- * @param[in] hVASpace VASpace handle of the vaspace that will be deleted
- **/
-static void
-destroyMemDesc
-(
-    Device  *pDevice,
-    NvHandle hVASpace
-)
-{
-    VirtualMemory *pVirtualMemory = NULL;
-    RsClient      *pClient = RES_GET_CLIENT(pDevice);
-    NODE          *pNode = NULL;
-    RM_API        *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
-
-    //
-    // RS-TODO: Convert to resource server dependency tracking system.
-    // stdmemConstruct calls add refAddDependant() but does it work properly for
-    // sharing (?)
-    //
-
-    // Check if any memory linked to this VASpace hasn't been freed.
-    btreeEnumStart(0, &pNode, pDevice->DevMemoryTable);
-    while (pNode != NULL)
-    {
-        Memory *pMemory = pNode->Data;
-        pVirtualMemory = dynamicCast(pMemory, VirtualMemory);
-        btreeEnumNext(&pNode, pDevice->DevMemoryTable);
-
-        if ((pVirtualMemory != NULL) &&
-            virtmemMatchesVASpace(pVirtualMemory, pClient->hClient, hVASpace))
-        {
-            // Free hMemory
-            pRmApi->Free(pRmApi, pClient->hClient, RES_GET_HANDLE(pVirtualMemory));
-
-            // Restart iteration as memory will be freed.
-            btreeEnumStart(0, &pNode, pDevice->DevMemoryTable);
-        }
-    }
 }
 
 /**
@@ -666,6 +636,10 @@ static NV_STATUS translateAllocFlagsToVASpaceFlags(NvU32 allocFlags, NvU32 *tran
     if (allocFlags & NV_VASPACE_ALLOCATION_FLAGS_REQUIRE_FIXED_OFFSET)
     {
         flags |= VASPACE_FLAGS_REQUIRE_FIXED_OFFSET;
+    }
+    if (allocFlags & NV_VASPACE_ALLOCATION_FLAGS_VA_INTERNAL_LIMIT)
+    {
+        flags |= VASPACE_FLAGS_RESTRICTED_RM_INTERNAL_VALIMITS;
     }
     flags |= VASPACE_FLAGS_ENABLE_VMM;
 

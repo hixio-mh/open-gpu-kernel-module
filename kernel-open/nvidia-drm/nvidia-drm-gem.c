@@ -26,7 +26,7 @@
 
 #include "nvidia-drm-priv.h"
 #include "nvidia-drm-ioctl.h"
-#include "nvidia-drm-prime-fence.h"
+#include "nvidia-drm-fence.h"
 #include "nvidia-drm-gem.h"
 #include "nvidia-drm-gem-nvkms-memory.h"
 #include "nvidia-drm-gem-user-memory.h"
@@ -81,10 +81,13 @@ typedef struct dma_buf_map nv_sysio_map_t;
 static int nv_drm_gem_vmap(struct drm_gem_object *gem,
                            nv_sysio_map_t *map)
 {
-    map->vaddr = nv_drm_gem_prime_vmap(gem);
-    if (map->vaddr == NULL) {
+    void *vaddr = nv_drm_gem_prime_vmap(gem);
+    if (vaddr == NULL) {
         return -ENOMEM;
+    } else if (IS_ERR(vaddr)) {
+        return PTR_ERR(vaddr);
     }
+    map->vaddr = vaddr;
     map->is_iomem = true;
     return 0;
 }
@@ -132,13 +135,8 @@ void nv_drm_gem_object_init(struct nv_drm_device *nv_dev,
 
     /* Initialize the gem object */
 
-#if defined(NV_DRM_FENCE_AVAILABLE)
+#if defined(NV_DRM_FENCE_AVAILABLE) && !defined(NV_DRM_GEM_OBJECT_HAS_RESV)
     nv_dma_resv_init(&nv_gem->resv);
-
-#if defined(NV_DRM_GEM_OBJECT_HAS_RESV)
-    nv_gem->base.resv = &nv_gem->resv;
-#endif
-
 #endif
 
 #if !defined(NV_DRM_DRIVER_HAS_GEM_FREE_OBJECT)
@@ -212,8 +210,7 @@ void nv_drm_gem_prime_vunmap(struct drm_gem_object *gem, void *address)
 nv_dma_resv_t* nv_drm_gem_prime_res_obj(struct drm_gem_object *obj)
 {
     struct nv_drm_gem_object *nv_gem = to_nv_gem_object(obj);
-
-    return &nv_gem->resv;
+    return nv_drm_gem_res_obj(nv_gem);
 }
 #endif
 
@@ -299,7 +296,7 @@ int nv_drm_mmap(struct file *file, struct vm_area_struct *vma)
             ret = -EINVAL;
             goto done;
         }
-        vma->vm_flags &= ~VM_MAYWRITE;
+        nv_vm_flags_clear(vma, VM_MAYWRITE);
     }
 #endif
 

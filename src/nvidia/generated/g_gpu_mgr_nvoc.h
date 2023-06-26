@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2005-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2005-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -30,6 +30,7 @@ extern "C" {
  */
 #include "g_gpu_mgr_nvoc.h"
 
+
 #ifndef _GPUMGR_H_
 #define _GPUMGR_H_
 
@@ -50,7 +51,8 @@ struct OBJGPU;
 #include "ctrl/ctrl2080/ctrl2080internal.h"
 #include "ctrl/ctrlc637.h"
 #include "nvoc/utility.h"
-#include "nv_firmware_types.h"
+
+#include "gpu_mgr/gpu_mgr_sli.h"
 
 #include "gpu/perf/kern_perf_gpuboostsync.h"
 
@@ -78,14 +80,12 @@ TYPEDEF_BITVECTOR(MC_ENGINE_BITVECTOR);
 #define gpumgrGetSliLinkConnectionCount(pGpu)                   ((NvU32) 0)
 #define gpumgrGetSLIConfig(gpuInstance, onlyWithSliLink)        ((NvU32) 0)
 #define gpumgrDisableVidLink(pGpu, head, max_dr_port)
-#define gpumgrPinsetToPinsetTableIndex(pinset, pPinsetIndex)    (NV_ERR_NOT_SUPPORTED)
 #define gpumgrGetBcEnabledStatus(g)                             (NV_FALSE)
 #define gpumgrGetBcEnabledStatusEx(g, t)                        (NV_FALSE)
 #define gpumgrSetBcEnabledStatus(g, b)                          do { NvBool b2 = b; (void)b2; } while (0)
 #define gpumgrSLILoopReentrancy(pGpu, l, r, i, pFuncStr)
 #define gpumgrSLILoopReentrancyPop(pGpu)                        ((NvU32)0)
 #define gpumgrSLILoopReentrancyPush(pGpu, sliLoopReentrancy)    do { NvU32 x = sliLoopReentrancy; (void)x; } while(0)
-
 
 typedef struct
 {
@@ -120,6 +120,15 @@ typedef struct _def_gpumgr_save_vbios_state
     void *pSaveRegsOpaque;                    //<! Saved values of VGA registers
 } GPUMGRSAVEVBIOSSTATE, *PGPUMGRSAVEVBIOSSTATE;
 
+typedef struct CONF_COMPUTE_CAPS
+{
+    NvBool bApmFeatureCapable;
+    NvBool bHccFeatureCapable;
+    NvBool bCCFeatureEnabled;
+    NvBool bDevToolsModeEnabled;
+    NvBool bAcceptClientRequest;
+} CONF_COMPUTE_CAPS;
+
 //
 // types of bridges supported.
 // These defines are inices for the types of bridges supported.
@@ -130,6 +139,23 @@ typedef struct _def_gpumgr_save_vbios_state
 #define SLI_MAX_BRIDGE_TYPES    2
 #define SLI_BT_VIDLINK          0
 #define SLI_BT_NVLINK           1
+
+/*!
+ * SLI link detection HAL flag defines for Sli/Vid/NvLink link detection HAL functions.
+ */
+#define GPU_LINK_DETECTION_HAL_STUB  0
+#define GPU_LINK_DETECTION_HAL_GK104 1
+#define GPU_LINK_DETECTION_HAL_GP100 2
+#define GPU_LINK_DETECTION_HAL_GP102 3
+
+//
+// GPU NVLINK reduced bandwidth mode
+//
+#define GPU_NVLINK_BW_MODE_FULL     (0x0)
+#define GPU_NVLINK_BW_MODE_OFF      (0x1)
+#define GPU_NVLINK_BW_MODE_MIN      (0x2)
+#define GPU_NVLINK_BW_MODE_HALF     (0x3)
+#define GPU_NVLINK_BW_MODE_3QUARTER (0x4)
 
 typedef struct NVLINK_TOPOLOGY_PARAMS
 {
@@ -250,14 +276,17 @@ struct OBJGPUMGR {
     struct OBJGPUGRP *pGpuGrpTable[32];
     NvU32 gpuInstMaskTable[32];
     NvU8 gpuBridgeType;
+    NvU8 gpuSliLinkRoute[2][32][32][2];
     SLI_GPU_BOOST_SYNC sliGpuBoostSync;
     GPUMGRSAVEVBIOSSTATE primaryVbiosState;
     NvU8 powerDisconnectedGpuCount;
     NvU8 powerDisconnectedGpuBus[32];
     NVLINK_TOPOLOGY_INFO nvlinkTopologyInfo[32];
+    NvU8 nvlinkBwMode;
     GPUMGR_SAVE_MIG_INSTANCE_TOPOLOGY MIGTopologyInfo[32];
     GPU_HANDLE_ID gpuHandleIDList[32];
     NvU32 numGpuHandles;
+    CONF_COMPUTE_CAPS ccCaps;
     pcieP2PCapsInfoList pcieP2PCapsInfoCache;
     void *pcieP2PCapsInfoLock;
 };
@@ -341,6 +370,15 @@ NV_STATUS gpumgrSetGpuInitDisabledNvlinks_IMPL(NvU32 gpuId, NvU32 mask, NvBool b
 NV_STATUS gpumgrGetGpuInitDisabledNvlinks_IMPL(NvU32 gpuId, NvU32 *pMask, NvBool *pbSkipHwNvlinkDisable);
 
 #define gpumgrGetGpuInitDisabledNvlinks(gpuId, pMask, pbSkipHwNvlinkDisable) gpumgrGetGpuInitDisabledNvlinks_IMPL(gpuId, pMask, pbSkipHwNvlinkDisable)
+NvU8 gpumgrGetGpuNvlinkBwMode_IMPL(void);
+
+#define gpumgrGetGpuNvlinkBwMode() gpumgrGetGpuNvlinkBwMode_IMPL()
+void gpumgrSetGpuNvlinkBwModeFromRegistry_IMPL(struct OBJGPU *pGpu);
+
+#define gpumgrSetGpuNvlinkBwModeFromRegistry(pGpu) gpumgrSetGpuNvlinkBwModeFromRegistry_IMPL(pGpu)
+NV_STATUS gpumgrSetGpuNvlinkBwMode_IMPL(NvU8 mode);
+
+#define gpumgrSetGpuNvlinkBwMode(mode) gpumgrSetGpuNvlinkBwMode_IMPL(mode)
 NvBool gpumgrCheckIndirectPeer_IMPL(struct OBJGPU *pGpu, struct OBJGPU *pRemoteGpu);
 
 #define gpumgrCheckIndirectPeer(pGpu, pRemoteGpu) gpumgrCheckIndirectPeer_IMPL(pGpu, pRemoteGpu)
@@ -370,7 +408,7 @@ void gpumgrServiceInterrupts_IMPL(NvU32 arg0, MC_ENGINE_BITVECTOR *arg1, NvBool 
 
 typedef struct {
     NvBool         specified;                           // Set this flag when using this struct
-    NvBool         bIsIGPU;                             // Set this flag for iGPU 
+    NvBool         bIsIGPU;                             // Set this flag for iGPU
 
     DEVICE_MAPPING deviceMapping[DEVICE_INDEX_MAX];  // Register Aperture mapping
     NvU32          socChipId0;                          // Chip ID used for HAL binding
@@ -435,7 +473,15 @@ NV_STATUS   gpumgrUnregisterGpuId(NvU32 gpuId);
 NV_STATUS   gpumgrExcludeGpuId(NvU32 gpuId);
 NV_STATUS   gpumgrSetUuid(NvU32 gpuId, NvU8 *uuid);
 NV_STATUS   gpumgrGetGpuUuidInfo(NvU32 gpuId, NvU8 **ppUuidStr, NvU32 *pUuidStrLen, NvU32 uuidFlags);
-NvBool      gpumgrIsDeviceRmFirmwareCapable(NvU16 devId, NvU32 pmcBoot42, NvBool *pbEnableByDefault);
+// gpumgrGetRmFirmwarePolicy() and  gpumgrGetRmFirmwareLogsEnabled() contain
+// all logic for deciding the policies for loading firmwares, and so need to be
+// compiled for all platforms besides those actually running the firmwares
+void        gpumgrGetRmFirmwarePolicy(NvU32 chipId, NvU32 pmcBoot42, NvBool bIsSoc,
+                                      NvU32 enableFirmwareRegVal, NvBool *pbRequestFirmware,
+                                      NvBool *pbAllowFallbackToMonolithicRm);
+NvBool      gpumgrGetRmFirmwareLogsEnabled(NvU32 enableFirmwareLogsRegVal);
+NvBool      gpumgrIsDeviceRmFirmwareCapable(NvU16 devId, NvU32 pmcBoot42,
+                                            NvBool bIsSoc, NvBool *pbEnableByDefault);
 NV_STATUS   gpumgrAttachGpu(NvU32 deviceInstance, GPUATTACHARG *);
 NV_STATUS   gpumgrDetachGpu(NvU32 deviceInstance);
 OBJGPU*     gpumgrGetNextGpu(NvU32 gpuMask, NvU32 *pStartIndex);
@@ -482,6 +528,7 @@ NvBool      gpumgrSetGpuAcquire(OBJGPU *pGpu);
 void        gpumgrSetGpuRelease(void);
 NvU8        gpumgrGetGpuBridgeType(void);
 NvBool      gpumgrAreAllGpusInOffloadMode(void);
+NvBool      gpumgrIsSafeToReadGpuInfo(void);
 
 //
 // gpumgrIsSubDeviceCountOne

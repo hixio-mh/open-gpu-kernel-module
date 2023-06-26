@@ -21,10 +21,15 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+//
+// This file holds Unix-specific NVIDIA driver options
+//
+
 #ifndef _RM_REG_H_
 #define _RM_REG_H_
 
 #include "nvtypes.h"
+#include "nv-firmware-registry.h"
 
 /*
  * use NV_REG_STRING to stringify a registry key when using that registry key
@@ -700,6 +705,22 @@
     NV_REG_STRING(__NV_ENABLE_PCIE_RELAXED_ORDERING_MODE)
 
 /*
+ * Option: EnableResizableBar
+ *
+ * Description:
+ *
+ * When this option is enabled, the NVIDIA driver will attempt to resize
+ * BAR1 to match framebuffer size, or the next largest available size on
+ * supported machines. This is currently only implemented for Linux.
+ *
+ * Possible values:
+ *  0 - Do not enable PCI BAR resizing
+ *  1 - Enable PCI BAR resizing
+ */
+#define __NV_ENABLE_RESIZABLE_BAR EnableResizableBar
+#define NV_REG_ENABLE_RESIZABLE_BAR NV_REG_STRING(__NV_ENABLE_RESIZABLE_BAR)
+
+/*
  * Option: EnableGpuFirmware
  *
  * Description:
@@ -707,52 +728,21 @@
  * When this option is enabled, the NVIDIA driver will enable use of GPU
  * firmware.
  *
- * Possible mode values:
- *  0 - Do not enable GPU firmware
- *  1 - Enable GPU firmware
- *  2 - (Default) Use the default enablement policy for GPU firmware
- *
- * Setting this to anything other than 2 will alter driver firmware-
- * enablement policies, possibly disabling GPU firmware where it would
- * have otherwise been enabled by default.
- *
  * If this key is set globally to the system, the driver may still attempt
  * to apply some policies to maintain uniform firmware modes across all
  * GPUS.  This may result in the driver failing initialization on some GPUs
  * to maintain such a policy.
- * 
+ *
  * If this key is set using NVreg_RegistryDwordsPerDevice, then the driver 
  * will attempt to honor whatever configuration is specified without applying
  * additional policies.  This may also result in failed GPU initialzations if
  * the configuration is not possible (for example if the firmware is missing 
- * from the filesystem, or the GPU is not capable). 
+ * from the filesystem, or the GPU is not capable).
  *
- * Policy bits:
- *
- * POLICY_ALLOW_FALLBACK:
- *  As the normal behavior is to fail GPU initialization if this registry 
- *  entry is set in such a way that results in an invalid configuration, if 
- *  instead the user would like the driver to automatically try to fallback 
- *  to initializing the failing GPU with firmware disabled, then this bit can 
- *  be set (ex: 0x11 means try to enable GPU firmware but fall back if needed).
- *  Note that this can result in a mixed mode configuration (ex: GPU0 has 
- *  firmware enabled, but GPU1 does not).
- *
+ * NOTE: More details for this regkey can be found in nv-firmware-registry.h
  */
-
 #define __NV_ENABLE_GPU_FIRMWARE  EnableGpuFirmware
 #define NV_REG_ENABLE_GPU_FIRMWARE NV_REG_STRING(__NV_ENABLE_GPU_FIRMWARE)
-
-#define NV_REG_ENABLE_GPU_FIRMWARE_MODE_MASK              0x0000000F
-#define NV_REG_ENABLE_GPU_FIRMWARE_MODE_DISABLED          0x00000000
-#define NV_REG_ENABLE_GPU_FIRMWARE_MODE_ENABLED           0x00000001
-#define NV_REG_ENABLE_GPU_FIRMWARE_MODE_DEFAULT           0x00000002
-
-#define NV_REG_ENABLE_GPU_FIRMWARE_POLICY_MASK            0x000000F0
-#define NV_REG_ENABLE_GPU_FIRMWARE_POLICY_ALLOW_FALLBACK  0x00000010
-
-#define NV_REG_ENABLE_GPU_FIRMWARE_DEFAULT_VALUE          0x00000012
-#define NV_REG_ENABLE_GPU_FIRMWARE_INVALID_VALUE          0xFFFFFFFF
 
 /*
  * Option: EnableGpuFirmwareLogs
@@ -760,18 +750,10 @@
  * When this option is enabled, the NVIDIA driver will send GPU firmware logs
  * to the system log, when possible.
  *
- * Possible values:
- *  0 - Do not send GPU firmware logs to the system log
- *  1 - Enable sending of GPU firmware logs to the system log
- *  2 - (Default) Enable sending of GPU firmware logs to the system log for
- *      the debug kernel driver build only
+ * NOTE: More details for this regkey can be found in nv-firmware-registry.h
  */
 #define __NV_ENABLE_GPU_FIRMWARE_LOGS  EnableGpuFirmwareLogs
 #define NV_REG_ENABLE_GPU_FIRMWARE_LOGS NV_REG_STRING(__NV_ENABLE_GPU_FIRMWARE_LOGS)
-
-#define NV_REG_ENABLE_GPU_FIRMWARE_LOGS_DISABLE            0x00000000
-#define NV_REG_ENABLE_GPU_FIRMWARE_LOGS_ENABLE             0x00000001
-#define NV_REG_ENABLE_GPU_FIRMWARE_LOGS_ENABLE_ON_DEBUG    0x00000002
 
 /*
  * Option: EnableDbgBreakpoint
@@ -825,6 +807,26 @@
 #define NV_DMA_REMAP_PEER_MMIO_DISABLE  0x00000000
 #define NV_DMA_REMAP_PEER_MMIO_ENABLE   0x00000001
 
+/*
+ * Option: NVreg_RmNvlinkBandwidth
+ *
+ * Description:
+ *
+ * This option allows user to reduce the NVLINK P2P bandwidth to save power.
+ * The option is in the string format.
+ *
+ * Possible string values:
+ *   OFF:      0% bandwidth
+ *   MIN:      15%-25% bandwidth depending on the system's NVLink topology
+ *   HALF:     50% bandwidth
+ *   3QUARTER: 75% bandwidth
+ *   FULL:     100% bandwidth (default)
+ *
+ * This option is only for Hopper+ GPU with NVLINK version 4.0.
+ */
+#define __NV_RM_NVLINK_BW RmNvlinkBandwidth
+#define NV_RM_NVLINK_BW NV_REG_STRING(__NV_RM_NVLINK_BW)
+
 #if defined(NV_DEFINE_REGISTRY_KEY_TABLE)
 
 /*
@@ -861,6 +863,7 @@ NV_DEFINE_REG_ENTRY_GLOBAL(__NV_IGNORE_MMIO_CHECK, 0);
 NV_DEFINE_REG_ENTRY_GLOBAL(__NV_NVLINK_DISABLE, 0);
 NV_DEFINE_REG_ENTRY_GLOBAL(__NV_ENABLE_PCIE_RELAXED_ORDERING_MODE, 0);
 NV_DEFINE_REG_ENTRY_GLOBAL(__NV_REGISTER_PCI_DRIVER, 1);
+NV_DEFINE_REG_ENTRY_GLOBAL(__NV_ENABLE_RESIZABLE_BAR, 0);
 NV_DEFINE_REG_ENTRY_GLOBAL(__NV_ENABLE_DBG_BREAKPOINT, 0);
 
 NV_DEFINE_REG_STRING_ENTRY(__NV_REGISTRY_DWORDS, NULL);
@@ -870,6 +873,7 @@ NV_DEFINE_REG_STRING_ENTRY(__NV_GPU_BLACKLIST, NULL);
 NV_DEFINE_REG_STRING_ENTRY(__NV_TEMPORARY_FILE_PATH, NULL);
 NV_DEFINE_REG_STRING_ENTRY(__NV_EXCLUDED_GPUS, NULL);
 NV_DEFINE_REG_ENTRY(__NV_DMA_REMAP_PEER_MMIO, NV_DMA_REMAP_PEER_MMIO_ENABLE);
+NV_DEFINE_REG_STRING_ENTRY(__NV_RM_NVLINK_BW, NULL);
 
 /*
  *----------------registry database definition----------------------
@@ -910,6 +914,7 @@ nv_parm_t nv_parms[] = {
     NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_DYNAMIC_POWER_MANAGEMENT_VIDEO_MEMORY_THRESHOLD),
     NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_REGISTER_PCI_DRIVER),
     NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_ENABLE_PCIE_RELAXED_ORDERING_MODE),
+    NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_ENABLE_RESIZABLE_BAR),
     NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_ENABLE_GPU_FIRMWARE),
     NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_ENABLE_GPU_FIRMWARE_LOGS),
     NV_DEFINE_PARAMS_TABLE_ENTRY(__NV_ENABLE_DBG_BREAKPOINT),

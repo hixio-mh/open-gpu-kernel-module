@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -32,6 +32,8 @@
 #include "vgpu/vgpu_events.h"
 #include "vgpu/rpc.h"
 #include "gpu/mmu/kern_gmmu.h"
+#include "libraries/nvport/nvport.h"
+#include "gpu/disp/kern_disp.h"
 
 #include "published/turing/tu102/dev_ctrl.h"
 #include "published/turing/tu102/dev_vm.h"
@@ -113,10 +115,10 @@ intrStateLoad_TU102
 )
 {
     NV_STATUS status = NV_OK;
-    INTR_TABLE_ENTRY *pIntrTable;
-    NvU32 intrTableSz, i;
+    InterruptTable    *pIntrTable;
+    InterruptTableIter iter;
 
-    NV_ASSERT_OK_OR_RETURN(intrGetInterruptTable_HAL(pGpu, pIntr, &pIntrTable, &intrTableSz));
+    NV_ASSERT_OK_OR_RETURN(intrGetInterruptTable_HAL(pGpu, pIntr, &pIntrTable));
 
     //
     // Make sure all leaf nodes are disabled before we enable them.  Older drivers
@@ -135,25 +137,26 @@ intrStateLoad_TU102
     // and all the VFs
     //
     pGpu->pmcRmOwnsIntrMask = INTERRUPT_MASK_DISABLED;
-    for (i = 0; i < intrTableSz; i++)
+    for (iter = vectIterAll(pIntrTable); vectIterNext(&iter);)
     {
-        if (pIntrTable[i].pmcIntrMask != NV_PMC_INTR_INVALID_MASK)
+        INTR_TABLE_ENTRY *pEntry = iter.pValue;
+        if (pEntry->pmcIntrMask != NV_PMC_INTR_INVALID_MASK)
         {
-            pGpu->pmcRmOwnsIntrMask |= pIntrTable[i].pmcIntrMask;
+            pGpu->pmcRmOwnsIntrMask |= pEntry->pmcIntrMask;
 
-            if (pIntrTable[i].mcEngine != MC_ENGINE_IDX_TMR)
+            if (pEntry->mcEngine != MC_ENGINE_IDX_TMR)
                 continue;
         }
 
-        if (pIntrTable[i].intrVector != NV_INTR_VECTOR_INVALID)
+        if (pEntry->intrVector != NV_INTR_VECTOR_INVALID)
         {
-            intrEnableLeaf_HAL(pGpu, pIntr, pIntrTable[i].intrVector);
+            intrEnableLeaf_HAL(pGpu, pIntr, pEntry->intrVector);
         }
 
-        if ((pIntrTable[i].intrVectorNonStall != NV_INTR_VECTOR_INVALID) &&
-            !pIntrTable[i].bDisableNonStall)
+        if ((pEntry->intrVectorNonStall != NV_INTR_VECTOR_INVALID)
+            )
         {
-            intrEnableLeaf_HAL(pGpu, pIntr, pIntrTable[i].intrVectorNonStall);
+            intrEnableLeaf_HAL(pGpu, pIntr, pEntry->intrVectorNonStall);
         }
     }
 
@@ -183,6 +186,7 @@ intrStateUnload_TU102
     // Disable all interrupts since we're unloading
 
     intrWriteRegTopEnClear_HAL(pGpu, pIntr, 0, 0xFFFFFFFF, NULL);
+    intrWriteRegTopEnClear_HAL(pGpu, pIntr, 1, 0xFFFFFFFF, NULL);
 
     _intrClearLeafEnables_TU102(pGpu, pIntr);
 
@@ -203,45 +207,51 @@ intrCacheIntrFields_TU102
 )
 {
     NV_STATUS status = NV_OK;
-    NvU32 leafEnHi, leafEnLo;
-    NvU32 uvmSharedLeafIdxStart = NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(NV_CPU_INTR_UVM_SHARED_SUBTREE_START);
-    NvU32 uvmSharedLeafIdxEnd = NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_END(NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST);
-    NvU32 stallSubtreeLast = intrGetStallSubtreeLast_HAL(pGpu, pIntr);
-    NvU32 i;
 
-    //
-    // Compile time assert to make sure we have only one client shared subtree.
-    // The below code assumes that.
-    //
-    ct_assert(NV_CPU_INTR_UVM_SHARED_SUBTREE_START == NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST);
-
-    // Now cache the leaf enable mask for the subtree shared with the client
-    leafEnHi = intrReadRegLeafEnSet_HAL(pGpu, pIntr, uvmSharedLeafIdxStart, NULL);
-    leafEnLo = intrReadRegLeafEnSet_HAL(pGpu, pIntr, uvmSharedLeafIdxEnd, NULL);
-
-    pIntr->uvmSharedCpuLeafEn = ((NvU64)(leafEnHi) << 32) | leafEnLo;
-    pIntr->uvmSharedCpuLeafEnDisableMask = intrGetUvmSharedLeafEnDisableMask_HAL(pGpu, pIntr);
-
-    //
-    // Cache the CPU_INTR_TOP_EN mask to clear when disabling stall interrupts
-    // (other interrupts are either not disabled or disabled selectively at leaf level)
-    //
-    for (i = NV_CPU_INTR_STALL_SUBTREE_START; i <= stallSubtreeLast; i++)
     {
-        pIntr->intrTopEnMask |= NVBIT(i);
+        NV2080_INTR_CATEGORY_SUBTREE_MAP uvmShared;
+        NV_ASSERT_OK_OR_RETURN(
+            intrGetSubtreeRange(pIntr,
+                                NV2080_INTR_CATEGORY_UVM_SHARED,
+                                &uvmShared));
+        //
+        // Assert to make sure we have only one client shared subtree.
+        // The below code assumes that.
+        //
+        NV_ASSERT_OR_RETURN(uvmShared.subtreeStart == uvmShared.subtreeEnd,
+                            NV_ERR_INVALID_STATE);
+
+        // Now cache the leaf enable mask for the subtree shared with the client
+        NvU32 leafEnHi = intrReadRegLeafEnSet_HAL(pGpu, pIntr,
+            NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(uvmShared.subtreeStart),
+            NULL);
+        NvU32 leafEnLo = intrReadRegLeafEnSet_HAL(pGpu, pIntr,
+            NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_END(uvmShared.subtreeStart),
+            NULL);
+
+        pIntr->uvmSharedCpuLeafEn = ((NvU64)(leafEnHi) << 32) | leafEnLo;
+        pIntr->uvmSharedCpuLeafEnDisableMask =
+            intrGetUvmSharedLeafEnDisableMask_HAL(pGpu, pIntr);
     }
+
+    //
+    // Cache the CPU_INTR_TOP_EN mask to clear when disabling stall
+    // interrupts (other interrupts are either not disabled or disabled
+    // selectively at leaf level)
+    //
+    pIntr->intrTopEnMask |= intrGetIntrTopLockedMask(pGpu, pIntr);
 
     OBJDISP *pDisp = GPU_GET_DISP(pGpu);
 
     // Cache client owned, shared interrupt, and display vectors for ease of use later
     pIntr->accessCntrIntrVector      = intrGetVectorFromEngineId(pGpu, pIntr, MC_ENGINE_IDX_ACCESS_CNTR,      NV_FALSE);
-    if (!gpuIsCCFeatureEnabled(pGpu))
+    if (!gpuIsCCFeatureEnabled(pGpu) || !gpuIsGspOwnedFaultBuffersEnabled(pGpu))
     {
         pIntr->replayableFaultIntrVector = intrGetVectorFromEngineId(pGpu, pIntr, MC_ENGINE_IDX_REPLAYABLE_FAULT, NV_FALSE);
     }
     else
     {
-        pIntr->replayableFaultIntrVector = NV_INTR_VECTOR_INVALID;
+        pIntr->replayableFaultIntrVector = intrGetVectorFromEngineId(pGpu, pIntr, MC_ENGINE_IDX_REPLAYABLE_FAULT_CPU, NV_FALSE);
     }
     if (pDisp != NULL)
     {
@@ -270,20 +280,30 @@ intrCacheIntrFields_TU102
         }
     }
 
-    //
-    // Now ensure that they're in the expected subtree (check right now so we
-    // don't have to check later in latency critical paths where this is assumed
-    // to be true)
-    //
-    if (NV_CTRL_INTR_GPU_VECTOR_TO_SUBTREE(pIntr->accessCntrIntrVector) != NV_CPU_INTR_UVM_SUBTREE_START)
     {
-        NV_PRINTF(LEVEL_ERROR, "UVM interrupt vectors for replayable fault and "
-            "access counter are in an unexpected subtree. Expected = 0x%x, actual = 0x%x\n",
-            NV_CPU_INTR_UVM_SUBTREE_START,
-            NV_CTRL_INTR_GPU_VECTOR_TO_SUBTREE(pIntr->accessCntrIntrVector));
-        DBG_BREAKPOINT();
-        status = NV_ERR_GENERIC;
-        goto exit;
+        //
+        // Now ensure that they're in the expected subtree (check right now so
+        // we don't have to check later in latency critical paths where this is
+        // assumed to be true)
+        //
+        NV2080_INTR_CATEGORY_SUBTREE_MAP uvmOwned;
+        NvU32 accessCntrSubtree = NV_CTRL_INTR_GPU_VECTOR_TO_SUBTREE(
+            pIntr->accessCntrIntrVector);
+        NV_ASSERT_OK_OR_RETURN(
+            intrGetSubtreeRange(pIntr,
+                                NV2080_INTR_CATEGORY_UVM_OWNED,
+                                &uvmOwned));
+        if (!(uvmOwned.subtreeStart <= accessCntrSubtree &&
+              accessCntrSubtree     <= uvmOwned.subtreeEnd))
+        {
+            NV_PRINTF(LEVEL_ERROR,
+                "UVM owned interrupt vector for access counter is in an unexpected subtree\n"
+                "Expected range = [0x%x, 0x%x], actual = 0x%x\n",
+                uvmOwned.subtreeStart, uvmOwned.subtreeEnd, accessCntrSubtree);
+            DBG_BREAKPOINT();
+            status = NV_ERR_GENERIC;
+            goto exit;
+        }
     }
 
 exit:
@@ -439,13 +459,13 @@ _intrEnableStall_TU102
     THREAD_STATE_NODE *pThreadState
 )
 {
-    NvU32 val, idx;
+    NvU32 idx;
 
     //
     // 1. Enable the UVM interrupts that RM currently owns at INTR_LEAF
     // level.
     //
-    val = _intrGetUvmLeafMask_TU102(pGpu, pIntr);
+    NvU32 val = _intrGetUvmLeafMask_TU102(pGpu, pIntr);
     idx = NV_CTRL_INTR_GPU_VECTOR_TO_LEAF_REG(pIntr->accessCntrIntrVector);
     if (val != 0)
     {
@@ -457,12 +477,18 @@ _intrEnableStall_TU102
     // level, based on the cached value.
     //
 
-    //
-    // Compile time assert to make sure we have only one client shared subtree.
-    // The below code assumes that.
-    //
-    ct_assert(NV_CPU_INTR_UVM_SHARED_SUBTREE_START == NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST);
-    idx = NV_CPU_INTR_UVM_SHARED_SUBTREE_START;
+    {
+        NV2080_INTR_CATEGORY_SUBTREE_MAP uvmShared;
+        NV_ASSERT_OK(intrGetSubtreeRange(pIntr,
+                                         NV2080_INTR_CATEGORY_UVM_SHARED,
+                                         &uvmShared));
+        //
+        // Assert to make sure we have only one client shared subtree.
+        // The below code assumes that.
+        //
+        NV_ASSERT(uvmShared.subtreeStart == uvmShared.subtreeEnd);
+        idx = uvmShared.subtreeStart;
+    }
 
     if (NvU64_HI32(pIntr->uvmSharedCpuLeafEn) != 0)
     {
@@ -482,15 +508,30 @@ _intrEnableStall_TU102
     // We use the assumption that 1 == ENABLE below
     ct_assert(NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_SET_SUBTREE_ENABLE == 1);
 
-    //
-    // 3. Enable all interrupt subtrees (except nonstall) at top level. Nonstall
-    // enablement is handled by a different function.
-    //
-    val = 0xFFFFFFFF;
+    {
+        //
+        // 3. Enable all interrupt subtrees (except nonstall) at top level.
+        // Nonstall enablement is handled by a different function.
+        //
+        NvU64 mask = NV_U64_MAX;
 
-    val &= ~intrGetIntrTopNonStallMask_HAL(pGpu, pIntr);
+        mask &= ~intrGetIntrTopNonStallMask_HAL(pGpu, pIntr);
 
-    intrWriteRegTopEnSet_HAL(pGpu, pIntr, 0, val, pThreadState);
+        if (NvU64_LO32(mask) != 0)
+        {
+            intrWriteRegTopEnSet_HAL(pGpu, pIntr,
+                                     0,
+                                     NvU64_LO32(mask),
+                                     pThreadState);
+        }
+        if (NvU64_HI32(mask) != 0)
+        {
+            intrWriteRegTopEnSet_HAL(pGpu, pIntr,
+                                     1,
+                                     NvU64_HI32(mask),
+                                     pThreadState);
+        }
+    }
 }
 
 /*!
@@ -525,12 +566,18 @@ _intrDisableStall_TU102
     // level, except the ones that can be handled outside the GPU lock.
     //
 
-    //
-    // Compile time assert to make sure we have only one client shared subtree.
-    // The below code assumes that.
-    //
-    ct_assert(NV_CPU_INTR_UVM_SHARED_SUBTREE_START == NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST);
-    idx = NV_CPU_INTR_UVM_SHARED_SUBTREE_START;
+    {
+        NV2080_INTR_CATEGORY_SUBTREE_MAP uvmShared;
+        NV_ASSERT_OK(intrGetSubtreeRange(pIntr,
+                                         NV2080_INTR_CATEGORY_UVM_SHARED,
+                                         &uvmShared));
+        //
+        // Assert to make sure we have only one client shared subtree.
+        // The below code assumes that.
+        //
+        NV_ASSERT(uvmShared.subtreeStart == uvmShared.subtreeEnd);
+        idx = uvmShared.subtreeStart;
+    }
 
     if (!gpuIsStateLoaded(pGpu))
     {
@@ -588,7 +635,20 @@ _intrDisableStall_TU102
     // 3. Disable some interrupt subtrees at top level (information about which
     // ones to disable is cached in pIntr->intrTopEnMask)
     //
-    intrWriteRegTopEnClear_HAL(pGpu, pIntr, 0, pIntr->intrTopEnMask, pThreadState);
+    if (NvU64_LO32(pIntr->intrTopEnMask) != 0)
+    {
+        intrWriteRegTopEnClear_HAL(pGpu, pIntr,
+                                   0,
+                                   NvU64_LO32(pIntr->intrTopEnMask),
+                                   pThreadState);
+    }
+    if (NvU64_HI32(pIntr->intrTopEnMask) != 0)
+    {
+        intrWriteRegTopEnClear_HAL(pGpu, pIntr,
+                                   1,
+                                   NvU64_HI32(pIntr->intrTopEnMask),
+                                   pThreadState);
+    }
 }
 
 /*!
@@ -662,7 +722,7 @@ _intrGetUvmLeafMask_TU102
         NvBool bRmOwnsReplayableFault = !!(pKernelGmmu->uvmSharedIntrRmOwnsMask & RM_UVM_SHARED_INTR_MASK_MMU_REPLAYABLE_FAULT_NOTIFY);
         NvBool bRmOwnsAccessCntr      = !!(pKernelGmmu->uvmSharedIntrRmOwnsMask & RM_UVM_SHARED_INTR_MASK_HUB_ACCESS_COUNTER_NOTIFY);
 
-        if (bRmOwnsReplayableFault && !gpuIsCCFeatureEnabled(pGpu))
+        if (bRmOwnsReplayableFault)
         {
             val |= NVBIT(NV_CTRL_INTR_GPU_VECTOR_TO_LEAF_BIT(pIntr->replayableFaultIntrVector));
         }
@@ -696,6 +756,7 @@ intrGetUvmSharedLeafEnDisableMask_TU102
     NvU32 intrVectorNonReplayableFault;
     NvU32 intrVectorFifoNonstall = NV_INTR_VECTOR_INVALID;
     NvU64 mask = 0;
+    NV2080_INTR_CATEGORY_SUBTREE_MAP uvmShared;
 
     // GSP RM services both MMU non-replayable fault and FIFO interrupts
     if (IS_GSP_CLIENT(pGpu))
@@ -719,22 +780,28 @@ intrGetUvmSharedLeafEnDisableMask_TU102
                 NV_CTRL_INTR_GPU_VECTOR_TO_LEAF_REG(intrVectorFifoNonstall));
     }
 
-    // Ascertain that they're in the first leaf
-    NV_ASSERT(NV_CTRL_INTR_GPU_VECTOR_TO_LEAF_REG(intrVectorNonReplayableFault) ==
-              NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(NV_CPU_INTR_UVM_SHARED_SUBTREE_START));
-
+    NV_ASSERT_OK(intrGetSubtreeRange(pIntr,
+                                     NV2080_INTR_CATEGORY_UVM_SHARED,
+                                     &uvmShared));
     //
-    // Compile-time ascertain that we only have 1 client subtree (we assume
+    // Ascertain that we only have 1 client subtree (we assume
     // this since we cache only 64 bits).
     //
-    ct_assert(NV_CPU_INTR_UVM_SHARED_SUBTREE_START == NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST);
+    NV_ASSERT(uvmShared.subtreeStart == uvmShared.subtreeEnd);
 
     //
-    // Compile-time ascertain that we only have 2 subtrees as this is what we currently support
-    // by only caching 64 bits
+    // Ascertain that we only have 2 subtrees as this is what we currently
+    // support by only caching 64 bits
     //
-    ct_assert((NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_END(NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST) - 1) ==
-               NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(NV_CPU_INTR_UVM_SHARED_SUBTREE_START));
+    NV_ASSERT(
+        (NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_END(uvmShared.subtreeEnd) - 1) ==
+        NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(uvmShared.subtreeStart));
+
+
+    // Ascertain that they're in the first leaf
+    NV_ASSERT(
+        NV_CTRL_INTR_GPU_VECTOR_TO_LEAF_REG(intrVectorNonReplayableFault) ==
+        NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(uvmShared.subtreeStart));
 
     mask |= NVBIT64(NV_CTRL_INTR_GPU_VECTOR_TO_LEAF_BIT(intrVectorNonReplayableFault));
 
@@ -767,14 +834,15 @@ intrGetPendingStallEngines_TU102
     THREAD_STATE_NODE   *pThreadState
 )
 {
-    INTR_TABLE_ENTRY *pIntrTable;
     KernelGmmu *pKernelGmmu = GPU_GET_KERNEL_GMMU(pGpu);
-    NvU32 intrTableSz, i;
-
-    NvU32 stallSubtreeLast = intrGetStallSubtreeLast_HAL(pGpu, pIntr);
+    InterruptTable    *pIntrTable;
+    InterruptTableIter iter;
+    NvU64 sanityCheckSubtreeMask = 0;
     NvU32 numIntrLeaves = intrGetNumLeaves_HAL(pGpu, pIntr);
     NV_ASSERT(numIntrLeaves <= NV_MAX_INTR_LEAVES);
     NvU32 intrLeafValues[NV_MAX_INTR_LEAVES];
+
+    sanityCheckSubtreeMask = intrGetIntrTopLegacyStallMask(pIntr);
 
     portMemSet(intrLeafValues, 0, numIntrLeaves * sizeof(NvU32));
     bitVectorClrAll(pEngines);
@@ -786,14 +854,15 @@ intrGetPendingStallEngines_TU102
     }
 
     NV_ASSERT_OK_OR_RETURN(intrGetLeafStatus_HAL(pGpu, pIntr, intrLeafValues, pThreadState));
-    NV_ASSERT_OK_OR_RETURN(intrGetInterruptTable_HAL(pGpu, pIntr, &pIntrTable, &intrTableSz));
+    NV_ASSERT_OK_OR_RETURN(intrGetInterruptTable_HAL(pGpu, pIntr, &pIntrTable));
 
-    for (i = 0; i < intrTableSz; i++)
+    for (iter = vectIterAll(pIntrTable); vectIterNext(&iter);)
     {
-        NvU32 intrVector;
-        NvU32 leaf, leafIndex, leafBit;
-
-        intrVector = pIntrTable[i].intrVector;
+        INTR_TABLE_ENTRY *pEntry     = iter.pValue;
+        NvU32             intrVector = pEntry->intrVector;
+        NvU32             leaf;
+        NvU32             leafIndex;
+        NvU32             leafBit;
 
         // Check if this engine has a valid stalling interrupt vector in the new tree
         if (intrVector == NV_INTR_VECTOR_INVALID)
@@ -810,10 +879,14 @@ intrGetPendingStallEngines_TU102
         // is only to catch issues during code development. Should never happen
         // in practice
         //
-        if ((leafIndex < NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(NV_CPU_INTR_UVM_SUBTREE_START)) ||
-            (leafIndex > NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_END(stallSubtreeLast)))
+
+        if ((sanityCheckSubtreeMask &
+             NVBIT64(NV_CTRL_INTR_LEAF_IDX_TO_SUBTREE(leafIndex))) == 0)
         {
-            NV_PRINTF(LEVEL_ERROR, "MC_ENGINE_IDX %u has invalid stall intr vector %u\n", pIntrTable[i].mcEngine, intrVector);
+            NV_PRINTF(LEVEL_ERROR,
+                      "MC_ENGINE_IDX %u has invalid stall intr vector %u\n",
+                      pEntry->mcEngine,
+                      intrVector);
             DBG_BREAKPOINT();
             continue;
         }
@@ -833,7 +906,7 @@ intrGetPendingStallEngines_TU102
         }
 
         // Add engine to bitvector
-        bitVectorSet(pEngines, pIntrTable[i].mcEngine);
+        bitVectorSet(pEngines, pEntry->mcEngine);
     }
 
     if (pKernelGmmu != NULL)
@@ -906,8 +979,7 @@ intrRetriggerTopLevel_TU102
     Intr *pIntr
 )
 {
-    NvU32 val = 0;
-    NvU32 i;
+    NvU64 mask = 0;
 
     // We use the assumption that 1 == DISABLE below
     ct_assert(NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_CLEAR_SUBTREE_DISABLE == 1);
@@ -923,28 +995,53 @@ intrRetriggerTopLevel_TU102
         // 1. If the alternate tree (nonstall tree) is handled "lockless", it
         // is not disabled during RM lock acquire, so needs re-arming.
         //
-        val |= intrGetIntrTopNonStallMask_HAL(pGpu, pIntr);
+        mask |= intrGetIntrTopNonStallMask_HAL(pGpu, pIntr);
     }
 
-    //
     // 2. UVM-owned interrupt tree (never disabled at top level)
+    mask |= intrGetIntrTopCategoryMask(pIntr, NV2080_INTR_CATEGORY_UVM_OWNED);
+
     // 3. UVM/RM shared interrupt tree (never disabled at top level)
-    //
-    for (i = NV_CPU_INTR_UVM_SUBTREE_START; i <= NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST; i++)
-    {
-        val |= NVBIT(i);
-    }
+    mask |= intrGetIntrTopCategoryMask(pIntr, NV2080_INTR_CATEGORY_UVM_SHARED);
 
     //
     // Bypass GPU_REG_WR32 that requires the GPU lock to be held (for some
     // register filters) by using the OS interface directly.
     //
-    osGpuWriteReg032(pGpu,
-                     GPU_GET_VREG_OFFSET(pGpu, NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_CLEAR(0)),
-                     val);
-    osGpuWriteReg032(pGpu,
-                     GPU_GET_VREG_OFFSET(pGpu, NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_SET(0)),
-                     val);
+    // Clear all first, then set
+    //
+    if (NvU64_LO32(mask) != 0 &&
+        0 < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_CLEAR__SIZE_1)
+    {
+        osGpuWriteReg032(pGpu,
+            GPU_GET_VREG_OFFSET(pGpu,
+                NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_CLEAR(0)),
+            NvU64_LO32(mask));
+    }
+    if (NvU64_HI32(mask) != 0 &&
+        1 < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_CLEAR__SIZE_1)
+    {
+        osGpuWriteReg032(pGpu,
+            GPU_GET_VREG_OFFSET(pGpu,
+                NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_CLEAR(1)),
+            NvU64_HI32(mask));
+    }
+    if (NvU64_LO32(mask) != 0 &&
+        0 < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_SET__SIZE_1)
+    {
+        osGpuWriteReg032(pGpu,
+            GPU_GET_VREG_OFFSET(pGpu,
+                NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_SET(0)),
+            NvU64_LO32(mask));
+    }
+    if (NvU64_HI32(mask) != 0 &&
+        1 < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_SET__SIZE_1)
+    {
+        osGpuWriteReg032(pGpu,
+            GPU_GET_VREG_OFFSET(pGpu,
+                NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_EN_SET(1)),
+            NvU64_HI32(mask));
+    }
 }
 
 /*!
@@ -967,11 +1064,8 @@ intrGetLeafStatus_TU102
     NvU32 subtreeIndex;
     NvU32 leafIndex;
 
-    // Read all the stalling interrupt leaf status
-    NvU32 stallSubtreeLast = intrGetStallSubtreeLast_HAL(pGpu, pIntr);
-    NV_ASSERT_OR_RETURN(NV_CPU_INTR_UVM_SUBTREE_START <= stallSubtreeLast, NV_ERR_INVALID_STATE);
-    subtreeIndex = NV_CPU_INTR_UVM_SUBTREE_START;
-    for (; subtreeIndex <= stallSubtreeLast; subtreeIndex++)
+    FOR_EACH_INDEX_IN_MASK(64, subtreeIndex,
+                           intrGetIntrTopLegacyStallMask(pIntr))
     {
         leafIndex = NV_CTRL_INTR_SUBTREE_TO_LEAF_IDX_START(subtreeIndex);
         if (pIntr->getProperty(pIntr, PDB_PROP_INTR_READ_ONLY_EVEN_NUMBERED_INTR_LEAF_REGS))
@@ -989,7 +1083,7 @@ intrGetLeafStatus_TU102
                 pLeafVals[leafIndex] = intrReadRegLeaf_HAL(pGpu, pIntr, leafIndex, pThreadState);
             }
         }
-    }
+    } FOR_EACH_INDEX_IN_MASK_END
 
     return NV_OK;
 }
@@ -1016,6 +1110,8 @@ intrGetPendingDisplayIntr_TU102
     THREAD_STATE_NODE   *pThreadState
 )
 {
+    KernelDisplay  *pKernelDisplay = GPU_GET_KERNEL_DISPLAY(pGpu);
+
     bitVectorClrAll(pEngines);
 
     if (IS_GPU_GC6_STATE_ENTERED(pGpu))
@@ -1026,6 +1122,14 @@ intrGetPendingDisplayIntr_TU102
     if (!API_GPU_ATTACHED_SANITY_CHECK(pGpu))
     {
         return NV_ERR_GPU_IS_LOST;
+    }
+
+    if (pKernelDisplay != NULL && kdispGetDeferredVblankHeadMask(pKernelDisplay))
+    {
+        // Deferred vblank is pending which we need to handle
+        bitVectorSet(pEngines, MC_ENGINE_IDX_DISP);
+        // Nothing else to set here, return early
+        return NV_OK;
     }
 
     if (pIntr->displayIntrVector == NV_INTR_VECTOR_INVALID)
@@ -1099,10 +1203,10 @@ intrDumpState_TU102
     Intr *pIntr
 )
 {
-    INTR_TABLE_ENTRY *pIntrTable;
-    NvU32 intrTableSz = 0;
-    NvU32 i;
-    NvU32 intrLeafSize = intrGetLeafSize_HAL(pGpu, pIntr);
+    InterruptTable    *pIntrTable;
+    InterruptTableIter iter;
+    NvU32              i;
+    NvU32              intrLeafSize = intrGetLeafSize_HAL(pGpu, pIntr);
 
     NV_PRINTF(LEVEL_INFO, "Interrupt registers:\n");
     for (i = 0; i < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP__SIZE_1; i++)
@@ -1118,27 +1222,53 @@ intrDumpState_TU102
     }
 
     NV_PRINTF(LEVEL_INFO, "MC Interrupt table:\n");
-    intrGetInterruptTable_HAL(pGpu, pIntr, &pIntrTable, &intrTableSz);
+    intrGetInterruptTable_HAL(pGpu, pIntr, &pIntrTable);
 
-    for (i = 0; i < intrTableSz; i++)
+    for (i = 0, iter = vectIterAll(pIntrTable); vectIterNext(&iter); i++)
     {
+        INTR_TABLE_ENTRY *pEntry = iter.pValue;
+        PORT_UNREFERENCED_VARIABLE(pEntry);
+
         NV_PRINTF(LEVEL_INFO,
-                  "%2u: mcEngineIdx=%-4u intrVector=%-10u intrVectorNonStall=%-10u bDisableNonStall=%u\n", i,
-                  pIntrTable[i].mcEngine,
-                  pIntrTable[i].intrVector,
-                  pIntrTable[i].intrVectorNonStall,
-                  pIntrTable[i].bDisableNonStall);
+            "%2u: mcEngineIdx=%-4u intrVector=%-10u intrVectorNonStall=%-10u\n",
+            i,
+            pEntry->mcEngine,
+            pEntry->intrVector,
+            pEntry->intrVectorNonStall);
     }
 }
 
-/*!
- * @brief Gets the stall subtree end index
- */
-NvU32
-intrGetStallSubtreeLast_TU102(OBJGPU *pGpu, Intr *pIntr)
+
+NV_STATUS
+intrInitSubtreeMap_TU102
+(
+    OBJGPU *pGpu,
+    Intr   *pIntr
+)
 {
-    return NV_CPU_INTR_STALL_SUBTREE_LAST;
+    NV2080_INTR_CATEGORY_SUBTREE_MAP *pCategoryEngine =
+        &pIntr->subtreeMap[NV2080_INTR_CATEGORY_ESCHED_DRIVEN_ENGINE];
+    pCategoryEngine->subtreeStart = NV_CPU_INTR_STALL_SUBTREE_START;
+    pCategoryEngine->subtreeEnd   = NV_CPU_INTR_STALL_SUBTREE_LAST;
+
+    NV2080_INTR_CATEGORY_SUBTREE_MAP *pCategoryEngineNotification =
+        &pIntr->subtreeMap[NV2080_INTR_CATEGORY_ESCHED_DRIVEN_ENGINE_NOTIFICATION];
+    pCategoryEngineNotification->subtreeStart = NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_SUBTREE(0);
+    pCategoryEngineNotification->subtreeEnd   = NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_SUBTREE(0);
+
+    NV2080_INTR_CATEGORY_SUBTREE_MAP *pCategoryUvmOwned =
+        &pIntr->subtreeMap[NV2080_INTR_CATEGORY_UVM_OWNED];
+    pCategoryUvmOwned->subtreeStart = NV_CPU_INTR_UVM_SUBTREE_START;
+    pCategoryUvmOwned->subtreeEnd   = NV_CPU_INTR_UVM_SUBTREE_LAST;
+
+    NV2080_INTR_CATEGORY_SUBTREE_MAP *pCategoryUvmShared =
+        &pIntr->subtreeMap[NV2080_INTR_CATEGORY_UVM_SHARED];
+    pCategoryUvmShared->subtreeStart = NV_CPU_INTR_UVM_SHARED_SUBTREE_START;
+    pCategoryUvmShared->subtreeEnd   = NV_CPU_INTR_UVM_SHARED_SUBTREE_LAST;
+
+    return NV_OK;
 }
+
 
 /*!
  * @brief Gets the number of leaf registers used
@@ -1159,12 +1289,15 @@ intrGetLeafSize_TU102(OBJGPU *pGpu, Intr *pIntr)
     return NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_LEAF__SIZE_1;
 }
 
-/*!
- * @brief Gets the mask of INTR_TOP that covers nonstall interrupts
- */
-NvU32
-intrGetIntrTopNonStallMask_TU102(OBJGPU *pGpu, Intr *pIntr)
+
+NvU64
+intrGetIntrTopNonStallMask_TU102
+(
+    OBJGPU *pGpu,
+    Intr   *pIntr
+)
 {
+    // TODO Bug 3823562 Remove these asserts
     // Compile-time assert against the highest set bit that will be returned
     #define NV_CPU_INTR_NOSTALL_SUBTREE_HIGHEST NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_SUBTREE(0)
 
@@ -1172,8 +1305,19 @@ intrGetIntrTopNonStallMask_TU102(OBJGPU *pGpu, Intr *pIntr)
     ct_assert(NV_CPU_INTR_NOSTALL_SUBTREE_HIGHEST < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_LEAF_EN_SET__SIZE_1);
     ct_assert(NV_CPU_INTR_NOSTALL_SUBTREE_HIGHEST < NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_LEAF_EN_CLEAR__SIZE_1);
 
-    return NVBIT32(NV_VIRTUAL_FUNCTION_PRIV_CPU_INTR_TOP_SUBTREE(0));
+    NvU64 mask = intrGetIntrTopCategoryMask(pIntr,
+        NV2080_INTR_CATEGORY_ESCHED_DRIVEN_ENGINE_NOTIFICATION);
+
+    //
+    // On all Ampere+ that use this TU102 HAL, Esched notification interrupts
+    // are also included in this if PDB_PROP_GPU_SWRL_GRANULAR_LOCKING is set.
+    //
+
+    // Sanity check that Intr.subtreeMap is initialized
+    NV_ASSERT(mask != 0);
+    return mask;
 }
+
 
 /*!
  * @brief Decode the interrupt mode for SW to use

@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -89,6 +89,7 @@ typedef NvU32      NV_ADDRESS_SPACE;
 #define ADDR_REGMEM     3         // NV register memory space
 #define ADDR_VIRTUAL    4         // Virtual address space only
 #define ADDR_FABRIC_V2  6         // Fabric address space for the FLA based addressing. Will replace ADDR_FABRIC.
+#define ADDR_EGM        7         // Extended GPU Memory (EGM)
 #define ADDR_FABRIC_MC  8         // Multicast fabric address space (MCFLA)
 
 //
@@ -215,7 +216,7 @@ typedef struct MEMORY_DESCRIPTOR
     NvU64 _flags;
 
     // Size of mapping used for this allocation.  Multiple mappings on Fermi must always use the same page size.
-    NvU32 _pageSize;
+    NvU64 _pageSize;
 
     // Size of the memory allocation in pages
     NvU64 PageCount;
@@ -343,6 +344,9 @@ typedef struct MEMORY_DESCRIPTOR
 
     // Serve as a head node in a list of submemdescs
     MEMORY_DESCRIPTOR_LIST *pSubMemDescList;
+
+    // Reserved for RM exclusive use
+    NvBool bRmExclusiveUse;
 
     // If strung in a intrusive linked list
     ListNode   node;
@@ -497,7 +501,7 @@ void memdescDescribe(MEMORY_DESCRIPTOR *pMemDesc,
 // Fill in a MEMORY_DESCRIPTOR with the physical page addresses returned by PMA.
 // It should already be initialized with memdescCreate*().
 void memdescFillPages(MEMORY_DESCRIPTOR *pMemDesc, NvU32 offset,
-                      NvU64 *pPages, NvU32 pageCount, NvU32 pageSize);
+                      NvU64 *pPages, NvU32 pageCount, NvU64 pageSize);
 
 // Create a MEMORY_DESCRIPTOR for a subset of an existing memory allocation.
 // The new MEMORY_DESCRIPTOR must be freed with memdescDestroy.
@@ -574,7 +578,7 @@ MEMORY_DESCRIPTOR *memdescGetMemDescFromIndex(MEMORY_DESCRIPTOR *pMemDesc, NvU32
 void memdescPrintMemdesc(MEMORY_DESCRIPTOR *pMemDesc, NvBool bPrintIndividualPages, const char *pPrefixMessage);
 
 // Get the page offset for an arbitrary power of two page size
-NvU64 memdescGetPageOffset(MEMORY_DESCRIPTOR *pMemDesc, NvU32 pageSize);
+NvU64 memdescGetPageOffset(MEMORY_DESCRIPTOR *pMemDesc, NvU64 pageSize);
 
 //
 // Internal APIs for the IOVASPACE to manage IOMMU mappings in a memdesc.
@@ -644,11 +648,14 @@ NvBool memdescGetContiguity(PMEMORY_DESCRIPTOR pMemDesc, ADDRESS_TRANSLATION add
 void memdescSetContiguity(PMEMORY_DESCRIPTOR pMemDesc, ADDRESS_TRANSLATION addressTranslation, NvBool isContiguous);
 NvBool memdescCheckContiguity(PMEMORY_DESCRIPTOR pMemDesc, ADDRESS_TRANSLATION addressTranslation);
 NV_ADDRESS_SPACE memdescGetAddressSpace(PMEMORY_DESCRIPTOR pMemDesc);
-NvU32 memdescGetPageSize(MEMORY_DESCRIPTOR *pMemDesc, ADDRESS_TRANSLATION addressTranslation);
-void  memdescSetPageSize(MEMORY_DESCRIPTOR *pMemDesc, ADDRESS_TRANSLATION addressTranslation, NvU32 pageSize);
+NvU64 memdescGetPageSize(MEMORY_DESCRIPTOR *pMemDesc, ADDRESS_TRANSLATION addressTranslation);
+void  memdescSetPageSize(MEMORY_DESCRIPTOR *pMemDesc, ADDRESS_TRANSLATION addressTranslation, NvU64 pageSize);
 PMEMORY_DESCRIPTOR memdescGetRootMemDesc(PMEMORY_DESCRIPTOR pMemDesc, NvU64 *pRootOffset);
 void memdescSetCustomHeap(PMEMORY_DESCRIPTOR);
 NvBool memdescGetCustomHeap(PMEMORY_DESCRIPTOR);
+NV_STATUS memdescSetPageArrayGranularity(MEMORY_DESCRIPTOR *pMemDesc, NvU64 pageArrayGranularity);
+
+NvBool memdescAcquireRmExclusiveUse(MEMORY_DESCRIPTOR *pMemDesc);
 
 /*!
  *  @brief Get PTE kind
@@ -941,7 +948,7 @@ void memdescUnmapInternal(OBJGPU *pGpu, MEMORY_DESCRIPTOR *pMemDesc, NvU32 flags
 
 /*!
  * @brief Set the name of the surface.
- * 
+ *
  * @param[in] pGpu     OBJGPU pointer.
  * @param[in] pMemDesc MEMORY_DESCRIPTOR pointer that the name is to be set for.
  * @param[in] name     const char pointer to the name to be set.
@@ -1117,6 +1124,11 @@ void memdescSetName(OBJGPU*, MEMORY_DESCRIPTOR *pMemDesc, const char *name, cons
 // against RM internal sysmem allocation
 //
 #define MEMDESC_FLAGS_SYSMEM_OWNED_BY_CLIENT        NVBIT64(44)
+//
+// Clients (including RM) should set this flag to request allocations in
+// unprotected memory. This is required for Confidential Compute cases
+//
+#define MEMDESC_FLAGS_ALLOC_IN_UNPROTECTED_MEMORY   NVBIT64(45)
 
 //
 // The following is a special use case for sharing memory between
@@ -1135,7 +1147,7 @@ void memdescSetName(OBJGPU*, MEMORY_DESCRIPTOR *pMemDesc, const char *name, cons
 //
 // Specical case to allocate the runlists for Guests from its GPA
 // In MODS, VM's GPA allocated from subheap so using this define to
-// Forcing memdesc to allocated from subheap 
+// Forcing memdesc to allocated from subheap
 //
 #define MEMDESC_FLAGS_FORCE_ALLOC_FROM_SUBHEAP      NVBIT64(48)
 

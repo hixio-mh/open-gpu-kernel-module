@@ -22,6 +22,8 @@
  */
 
 #include "virtualization/common_vgpu_mgr.h"
+#include "virtualization/hypervisor/hypervisor.h"
+
 #include "ctrl/ctrl2080/ctrl2080gpu.h"
 
 void
@@ -36,6 +38,7 @@ vgpuMgrReserveSystemChannelIDs
     VGPU_TYPE *vgpuTypeInfo,
     NvU32 gfid,
     NvU32 *pChidOffset,
+    NvU32 *pChannelCount,
     NvHandle hClient,
     NvU32 numChannels,
     NvU32 engineFifoListNumEntries,
@@ -51,6 +54,7 @@ vgpuMgrFreeSystemChannelIDs
     OBJGPU *pGpu,
     NvU32 gfid,
     NvU32 *pChidOffset,
+    NvU32 *pChannelCount,
     NvHandle hClient,
     NvU32 engineFifoListNumEntries,
     FIFO_ENGINE_LIST *engineFifoList

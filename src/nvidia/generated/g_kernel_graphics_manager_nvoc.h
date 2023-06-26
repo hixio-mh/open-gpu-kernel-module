@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -71,7 +71,6 @@ struct KernelGraphicsManager {
     struct OBJENGSTATE *__nvoc_pbase_OBJENGSTATE;
     struct KernelGraphicsManager *__nvoc_pbase_KernelGraphicsManager;
     NV_STATUS (*__kgrmgrConstructEngine__)(struct OBJGPU *, struct KernelGraphicsManager *, ENGDESCRIPTOR);
-    NV_STATUS (*__kgrmgrReconcileTunableState__)(POBJGPU, struct KernelGraphicsManager *, void *);
     NV_STATUS (*__kgrmgrStateLoad__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
     NV_STATUS (*__kgrmgrStateUnload__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
     NV_STATUS (*__kgrmgrStateInitLocked__)(POBJGPU, struct KernelGraphicsManager *);
@@ -83,12 +82,32 @@ struct KernelGraphicsManager {
     void (*__kgrmgrInitMissing__)(POBJGPU, struct KernelGraphicsManager *);
     NV_STATUS (*__kgrmgrStatePreInitLocked__)(POBJGPU, struct KernelGraphicsManager *);
     NV_STATUS (*__kgrmgrStatePreInitUnlocked__)(POBJGPU, struct KernelGraphicsManager *);
-    NV_STATUS (*__kgrmgrGetTunableState__)(POBJGPU, struct KernelGraphicsManager *, void *);
-    NV_STATUS (*__kgrmgrCompareTunableState__)(POBJGPU, struct KernelGraphicsManager *, void *, void *);
-    void (*__kgrmgrFreeTunableState__)(POBJGPU, struct KernelGraphicsManager *, void *);
     NV_STATUS (*__kgrmgrStatePostLoad__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
-    NV_STATUS (*__kgrmgrAllocTunableState__)(POBJGPU, struct KernelGraphicsManager *, void **);
-    NV_STATUS (*__kgrmgrSetTunableState__)(POBJGPU, struct KernelGraphicsManager *, void *);
+    NvBool (*__kgrmgrIsPresent__)(POBJGPU, struct KernelGraphicsManager *);
+    struct GRMGR_LEGACY_KGRAPHICS_STATIC_INFO PRIVATE_FIELD(legacyKgraphicsStaticInfo);
+    NvU64 PRIVATE_FIELD(veidInUseMask);
+    NvU64 PRIVATE_FIELD(grIdxVeidMask)[8];
+    CTX_BUF_INFO PRIVATE_FIELD(globalCtxBufInfo)[10];
+};
+struct KernelGraphicsManager_PRIVATE {
+    const struct NVOC_RTTI *__nvoc_rtti;
+    struct OBJENGSTATE __nvoc_base_OBJENGSTATE;
+    struct Object *__nvoc_pbase_Object;
+    struct OBJENGSTATE *__nvoc_pbase_OBJENGSTATE;
+    struct KernelGraphicsManager *__nvoc_pbase_KernelGraphicsManager;
+    NV_STATUS (*__kgrmgrConstructEngine__)(struct OBJGPU *, struct KernelGraphicsManager *, ENGDESCRIPTOR);
+    NV_STATUS (*__kgrmgrStateLoad__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
+    NV_STATUS (*__kgrmgrStateUnload__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
+    NV_STATUS (*__kgrmgrStateInitLocked__)(POBJGPU, struct KernelGraphicsManager *);
+    NV_STATUS (*__kgrmgrStatePreLoad__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
+    NV_STATUS (*__kgrmgrStatePostUnload__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
+    void (*__kgrmgrStateDestroy__)(POBJGPU, struct KernelGraphicsManager *);
+    NV_STATUS (*__kgrmgrStatePreUnload__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
+    NV_STATUS (*__kgrmgrStateInitUnlocked__)(POBJGPU, struct KernelGraphicsManager *);
+    void (*__kgrmgrInitMissing__)(POBJGPU, struct KernelGraphicsManager *);
+    NV_STATUS (*__kgrmgrStatePreInitLocked__)(POBJGPU, struct KernelGraphicsManager *);
+    NV_STATUS (*__kgrmgrStatePreInitUnlocked__)(POBJGPU, struct KernelGraphicsManager *);
+    NV_STATUS (*__kgrmgrStatePostLoad__)(POBJGPU, struct KernelGraphicsManager *, NvU32);
     NvBool (*__kgrmgrIsPresent__)(POBJGPU, struct KernelGraphicsManager *);
     struct GRMGR_LEGACY_KGRAPHICS_STATIC_INFO legacyKgraphicsStaticInfo;
     NvU64 veidInUseMask;
@@ -127,7 +146,6 @@ NV_STATUS __nvoc_objCreate_KernelGraphicsManager(KernelGraphicsManager**, Dynami
     __nvoc_objCreate_KernelGraphicsManager((ppNewObj), staticCast((pParent), Dynamic), (createFlags))
 
 #define kgrmgrConstructEngine(arg0, arg1, arg2) kgrmgrConstructEngine_DISPATCH(arg0, arg1, arg2)
-#define kgrmgrReconcileTunableState(pGpu, pEngstate, pTunableState) kgrmgrReconcileTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
 #define kgrmgrStateLoad(pGpu, pEngstate, arg0) kgrmgrStateLoad_DISPATCH(pGpu, pEngstate, arg0)
 #define kgrmgrStateUnload(pGpu, pEngstate, arg0) kgrmgrStateUnload_DISPATCH(pGpu, pEngstate, arg0)
 #define kgrmgrStateInitLocked(pGpu, pEngstate) kgrmgrStateInitLocked_DISPATCH(pGpu, pEngstate)
@@ -139,21 +157,12 @@ NV_STATUS __nvoc_objCreate_KernelGraphicsManager(KernelGraphicsManager**, Dynami
 #define kgrmgrInitMissing(pGpu, pEngstate) kgrmgrInitMissing_DISPATCH(pGpu, pEngstate)
 #define kgrmgrStatePreInitLocked(pGpu, pEngstate) kgrmgrStatePreInitLocked_DISPATCH(pGpu, pEngstate)
 #define kgrmgrStatePreInitUnlocked(pGpu, pEngstate) kgrmgrStatePreInitUnlocked_DISPATCH(pGpu, pEngstate)
-#define kgrmgrGetTunableState(pGpu, pEngstate, pTunableState) kgrmgrGetTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
-#define kgrmgrCompareTunableState(pGpu, pEngstate, pTunables1, pTunables2) kgrmgrCompareTunableState_DISPATCH(pGpu, pEngstate, pTunables1, pTunables2)
-#define kgrmgrFreeTunableState(pGpu, pEngstate, pTunableState) kgrmgrFreeTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
 #define kgrmgrStatePostLoad(pGpu, pEngstate, arg0) kgrmgrStatePostLoad_DISPATCH(pGpu, pEngstate, arg0)
-#define kgrmgrAllocTunableState(pGpu, pEngstate, ppTunableState) kgrmgrAllocTunableState_DISPATCH(pGpu, pEngstate, ppTunableState)
-#define kgrmgrSetTunableState(pGpu, pEngstate, pTunableState) kgrmgrSetTunableState_DISPATCH(pGpu, pEngstate, pTunableState)
 #define kgrmgrIsPresent(pGpu, pEngstate) kgrmgrIsPresent_DISPATCH(pGpu, pEngstate)
 NV_STATUS kgrmgrConstructEngine_IMPL(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1, ENGDESCRIPTOR arg2);
 
 static inline NV_STATUS kgrmgrConstructEngine_DISPATCH(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1, ENGDESCRIPTOR arg2) {
     return arg1->__kgrmgrConstructEngine__(arg0, arg1, arg2);
-}
-
-static inline NV_STATUS kgrmgrReconcileTunableState_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, void *pTunableState) {
-    return pEngstate->__kgrmgrReconcileTunableState__(pGpu, pEngstate, pTunableState);
 }
 
 static inline NV_STATUS kgrmgrStateLoad_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, NvU32 arg0) {
@@ -200,32 +209,17 @@ static inline NV_STATUS kgrmgrStatePreInitUnlocked_DISPATCH(POBJGPU pGpu, struct
     return pEngstate->__kgrmgrStatePreInitUnlocked__(pGpu, pEngstate);
 }
 
-static inline NV_STATUS kgrmgrGetTunableState_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, void *pTunableState) {
-    return pEngstate->__kgrmgrGetTunableState__(pGpu, pEngstate, pTunableState);
-}
-
-static inline NV_STATUS kgrmgrCompareTunableState_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, void *pTunables1, void *pTunables2) {
-    return pEngstate->__kgrmgrCompareTunableState__(pGpu, pEngstate, pTunables1, pTunables2);
-}
-
-static inline void kgrmgrFreeTunableState_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, void *pTunableState) {
-    pEngstate->__kgrmgrFreeTunableState__(pGpu, pEngstate, pTunableState);
-}
-
 static inline NV_STATUS kgrmgrStatePostLoad_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, NvU32 arg0) {
     return pEngstate->__kgrmgrStatePostLoad__(pGpu, pEngstate, arg0);
 }
 
-static inline NV_STATUS kgrmgrAllocTunableState_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, void **ppTunableState) {
-    return pEngstate->__kgrmgrAllocTunableState__(pGpu, pEngstate, ppTunableState);
-}
-
-static inline NV_STATUS kgrmgrSetTunableState_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate, void *pTunableState) {
-    return pEngstate->__kgrmgrSetTunableState__(pGpu, pEngstate, pTunableState);
-}
-
 static inline NvBool kgrmgrIsPresent_DISPATCH(POBJGPU pGpu, struct KernelGraphicsManager *pEngstate) {
     return pEngstate->__kgrmgrIsPresent__(pGpu, pEngstate);
+}
+
+static inline NvU64 kgrmgrGetGrIdxVeidMask(struct OBJGPU *pGpu, struct KernelGraphicsManager *pKernelGraphicsManager, NvU32 grIdx) {
+    struct KernelGraphicsManager_PRIVATE *pKernelGraphicsManager_PRIVATE = (struct KernelGraphicsManager_PRIVATE *)pKernelGraphicsManager;
+    return pKernelGraphicsManager_PRIVATE->grIdxVeidMask[grIdx];
 }
 
 void kgrmgrGetGrObjectType_IMPL(NvU32 classNum, NvU32 *pObjectType);
@@ -267,6 +261,17 @@ static inline NV_STATUS kgrmgrCtrlRouteKGR(struct OBJGPU *arg0, struct KernelGra
 #define kgrmgrCtrlRouteKGR(arg0, arg1, hClient, pGrRouteInfo, ppKernelGraphics) kgrmgrCtrlRouteKGR_IMPL(arg0, arg1, hClient, pGrRouteInfo, ppKernelGraphics)
 #endif //__nvoc_kernel_graphics_manager_h_disabled
 
+NV_STATUS kgrmgrCtrlRouteKGRWithDevice_IMPL(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1, struct Device *pDevice, const NV2080_CTRL_GR_ROUTE_INFO *pGrRouteInfo, struct KernelGraphics **ppKernelGraphics);
+
+#ifdef __nvoc_kernel_graphics_manager_h_disabled
+static inline NV_STATUS kgrmgrCtrlRouteKGRWithDevice(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1, struct Device *pDevice, const NV2080_CTRL_GR_ROUTE_INFO *pGrRouteInfo, struct KernelGraphics **ppKernelGraphics) {
+    NV_ASSERT_FAILED_PRECOMP("KernelGraphicsManager was disabled!");
+    return NV_ERR_NOT_SUPPORTED;
+}
+#else //__nvoc_kernel_graphics_manager_h_disabled
+#define kgrmgrCtrlRouteKGRWithDevice(arg0, arg1, pDevice, pGrRouteInfo, ppKernelGraphics) kgrmgrCtrlRouteKGRWithDevice_IMPL(arg0, arg1, pDevice, pGrRouteInfo, ppKernelGraphics)
+#endif //__nvoc_kernel_graphics_manager_h_disabled
+
 NvU32 kgrmgrGetLegacyGpcMask_IMPL(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1);
 
 #ifdef __nvoc_kernel_graphics_manager_h_disabled
@@ -276,6 +281,17 @@ static inline NvU32 kgrmgrGetLegacyGpcMask(struct OBJGPU *arg0, struct KernelGra
 }
 #else //__nvoc_kernel_graphics_manager_h_disabled
 #define kgrmgrGetLegacyGpcMask(arg0, arg1) kgrmgrGetLegacyGpcMask_IMPL(arg0, arg1)
+#endif //__nvoc_kernel_graphics_manager_h_disabled
+
+NvU32 kgrmgrGetLegacyPhysGfxGpcMask_IMPL(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1);
+
+#ifdef __nvoc_kernel_graphics_manager_h_disabled
+static inline NvU32 kgrmgrGetLegacyPhysGfxGpcMask(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1) {
+    NV_ASSERT_FAILED_PRECOMP("KernelGraphicsManager was disabled!");
+    return 0;
+}
+#else //__nvoc_kernel_graphics_manager_h_disabled
+#define kgrmgrGetLegacyPhysGfxGpcMask(arg0, arg1) kgrmgrGetLegacyPhysGfxGpcMask_IMPL(arg0, arg1)
 #endif //__nvoc_kernel_graphics_manager_h_disabled
 
 NvU32 kgrmgrGetLegacyTpcMask_IMPL(struct OBJGPU *arg0, struct KernelGraphicsManager *arg1, NvU32 gpcId);

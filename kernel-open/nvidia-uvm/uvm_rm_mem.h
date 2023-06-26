@@ -27,6 +27,7 @@
 #include "uvm_forward_decl.h"
 #include "uvm_processors.h"
 #include "uvm_test_ioctl.h"
+#include "uvm_hal_types.h"
 
 typedef enum
 {
@@ -120,8 +121,9 @@ NV_STATUS uvm_rm_mem_alloc_and_map_all(uvm_gpu_t *gpu,
 // Map/Unmap on UVM's internal address space of a GPU. In SR-IOV heavy the
 // operation is also applied on the GPU's proxy address space.
 //
-// Supported only for sysmem (UVM_RM_MEM_TYPE_SYS). The GPU has to be different
-// from the one the memory was originally allocated for.
+// Mapping/unmapping on the GPU owner, or mapping on an already mapped GPU, are
+// no-ops. Mapping/unmapping on a GPU different from the owner is only supported
+// for system memory.
 //
 // Locking same as uvm_rm_mem_alloc()
 NV_STATUS uvm_rm_mem_map_gpu(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu, NvU64 gpu_alignment);
@@ -142,9 +144,7 @@ NvU64 uvm_rm_mem_get_gpu_proxy_va(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu);
 
 // Get the GPU VA of the given memory in UVM's internal address space (if the
 // flag is false), or proxy address space (if flag is true).
-NvU64 uvm_rm_mem_get_gpu_va(uvm_rm_mem_t *rm_mem,
-                            uvm_gpu_t *gpu,
-                            bool is_proxy_va_space);
+uvm_gpu_address_t uvm_rm_mem_get_gpu_va(uvm_rm_mem_t *rm_mem, uvm_gpu_t *gpu, bool is_proxy_va_space);
 
 // Query if the memory is mapped on the CPU, GPU (UVM internal/kernel address
 // space), or GPU (proxy address space)

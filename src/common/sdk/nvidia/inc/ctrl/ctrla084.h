@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,10 +27,9 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrla084.finn
+// Source file:      ctrl/ctrla084.finn
 //
 
-#include "nv_vgpu_types.h"
 #include "ctrl/ctrlxxxx.h"
 #include "ctrl/ctrl2080/ctrl2080gpu.h" // NV2080_GPU_MAX_GID_LENGTH
 #include "ctrl/ctrl2080/ctrl2080fb.h" // NV2080_CTRL_FB_OFFLINED_PAGES_MAX_PAGES
@@ -63,8 +62,7 @@
 #define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_VGPU_DEVICE_INFO_PARAMS_MESSAGE_ID (0x1U)
 
 typedef struct NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_VGPU_DEVICE_INFO_PARAMS {
-    NvU8  vgpuUuid[NV2080_GPU_MAX_GID_LENGTH];
-    NvU32 vgpuDeviceInstanceId;
+    NvU8 vgpuUuid[NV2080_GPU_MAX_GID_LENGTH];
 } NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_VGPU_DEVICE_INFO_PARAMS;
 
 /* NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_SET_VGPU_GUEST_LIFE_CYCLE_STATE
@@ -238,65 +236,52 @@ typedef struct NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_EVENT_SET_NOTIFICATION_PARAMS
     NvBool bNotifyState;
 } NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_EVENT_SET_NOTIFICATION_PARAMS;
 
-/* NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE
+/* NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_GER_BAR_MAPPING_RANGES
  *
- * This command is used to set SRIOV state parameters in RM.
+ * This command is used to get Bar mapping ranges in RM.
  *
  * Parameters:
+ * offsets [OUT]
+ *  Offsets of the ranges
+ * sizes [OUT]
+ *  Sizes of the ranges
+ * mitigated [OUT]
+ *  Specifies whether it's mitigated range
+ * numRanges [OUT]
+ *  Number of ranges
  *
- * numPluginChannels [IN]
- *   Number of channels required by plugin
+ * osPageSize [IN]
+ *  Page size.
  *
  * Possible status values returned are:
  *   NV_OK
- *   NV_ERR_INVALID_ARGUMENT
+ *   NV_ERR_INVALID_STATE
  */
-#define NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE                 (0xa0840108) /* finn: Evaluated from "(FINN_NVA084_KERNEL_HOST_VGPU_DEVICE_KERNEL_HOST_VGPU_DEVICE_INTERFACE_ID << 8) | NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE_PARAMS_MESSAGE_ID" */
+#define NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_GET_BAR_MAPPING_RANGES (0xa084010a) /* finn: Evaluated from "(FINN_NVA084_KERNEL_HOST_VGPU_DEVICE_KERNEL_HOST_VGPU_DEVICE_INTERFACE_ID << 8) | NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_GET_BAR_MAPPING_RANGES_PARAMS_MESSAGE_ID" */
 
-#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE_MAX_PLUGIN_CHANNELS 5
+#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_MAX_BAR_MAPPING_RANGES     10
 
-#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE_PARAMS_MESSAGE_ID (0x8U)
+#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_GET_BAR_MAPPING_RANGES_PARAMS_MESSAGE_ID (0xAU)
 
-typedef struct NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE_PARAMS {
-    NvU32 numPluginChannels;
-} NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE_PARAMS;
+typedef struct NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_GET_BAR_MAPPING_RANGES_PARAMS {
+    NV_DECLARE_ALIGNED(NvU64 offsets[NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_MAX_BAR_MAPPING_RANGES], 8);
+    NV_DECLARE_ALIGNED(NvU64 sizes[NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_MAX_BAR_MAPPING_RANGES], 8);
+    NvU32  numRanges;
+    NvU32  osPageSize;
+    NvBool mitigated[NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_MAX_BAR_MAPPING_RANGES];
+} NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_GET_BAR_MAPPING_RANGES_PARAMS;
 
-/* NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID
+/*
+ * NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_RESTORE_DEFAULT_EXEC_PARTITION
  *
- * This command is used to set/unset VM ID parameters in host vgpu device in RM.
- *
- * Parameters:
- *
- * action
- *   This parameter specifies the desired set guest id action.
- *   Valid set guest id actions include:
- *     NVA084_CTRL_HOST_VGPU_DEVICE_KERNEL_SET_GUEST_ID_ACTION_SET
- *       This action sets the VM ID information in host vgpu device.
- *     NVA084_CTRL_HOST_VGPU_DEVICE_KERNEL_SET_GUEST_ID_ACTION_UNSET
- *       This action unsets the VM ID information in host vgpu device.
- * vmPid [IN]
- *   VM process ID
- * vmIdType[IN]
- *   VM ID type whether it's UUID or DOMAIN_ID
- * guestVmId[IN]
- *   VM ID
+ * This command restores the vGPU device's default EXEC partition saved in
+ * KERNEL_HOST_VGPU_DEVICE.
  *
  * Possible status values returned are:
  *   NV_OK
- *   NV_ERR_INVALID_ARGUMENT
+ *   NV_ERR_OBJECT_NOT_FOUND
+ *   NV_ERR_NOT_SUPPORTED
  */
-#define NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID (0xa0840109) /* finn: Evaluated from "(FINN_NVA084_KERNEL_HOST_VGPU_DEVICE_KERNEL_HOST_VGPU_DEVICE_INTERFACE_ID << 8) | NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_PARAMS_MESSAGE_ID" */
-
-#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_PARAMS_MESSAGE_ID (0x9U)
-
-typedef struct NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_PARAMS {
-    NvU8       action;
-    NvU32      vmPid;
-    VM_ID_TYPE vmIdType;
-    NV_DECLARE_ALIGNED(VM_ID guestVmId, 8);
-} NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_PARAMS;
-
-#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_ACTION_SET   (0x00000000)
-#define NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_ACTION_UNSET (0x00000001)
+#define NVA084_CTRL_CMD_KERNEL_HOST_VGPU_DEVICE_RESTORE_DEFAULT_EXEC_PARTITION (0xa084010b) /* finn: Evaluated from "(FINN_NVA084_KERNEL_HOST_VGPU_DEVICE_KERNEL_HOST_VGPU_DEVICE_INTERFACE_ID << 8) | 0xB" */
 
 /* _ctrla084_h_ */

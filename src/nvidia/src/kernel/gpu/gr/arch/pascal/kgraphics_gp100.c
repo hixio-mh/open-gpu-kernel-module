@@ -21,7 +21,10 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#define NVOC_KERNEL_GRAPHICS_H_PRIVATE_ACCESS_ALLOWED
+
 #include "kernel/gpu/gr/kernel_graphics.h"
+#include "kernel/gpu/mem_mgr/mem_mgr.h"
 #include "kernel/gpu/mig_mgr/kernel_mig_manager.h"
 #include "kernel/gpu/intr/engine_idx.h"
 #include "nvRmReg.h"
@@ -64,6 +67,15 @@ kgraphicsInitFecsRegistryOverrides_GP100
         kgraphicsSetCtxswLoggingSupported(pGpu, pKernelGraphics, bLog);
     }
 
+    //
+    // CTXSW logging is not supported when HCC prod settings are enabled.
+    // However, the same is supported when HCC is enabled in devtools mode
+    //
+    if (gpuIsCCFeatureEnabled(pGpu))
+    {
+        kgraphicsSetCtxswLoggingSupported(pGpu, pKernelGraphics, NV_FALSE);
+    }
+
     fecsSetRecordsPerIntr(pGpu, pKernelGraphics, NV_REG_STR_RM_CTXSW_LOG_RECORDS_PER_INTR_DEFAULT);
     if (osReadRegistryDword(pGpu, NV_REG_STR_RM_CTXSW_LOG_RECORDS_PER_INTR, &data) == NV_OK)
     {
@@ -90,7 +102,6 @@ kgraphicsAllocGrGlobalCtxBuffers_GP100
 {
     extern NV_STATUS kgraphicsAllocGrGlobalCtxBuffers_GM200(OBJGPU *pGpu, KernelGraphics *pKernelGraphics, NvU32 gfid, KernelGraphicsContext *pKernelGraphicsContext);
     GR_GLOBALCTX_BUFFERS         *pCtxBuffers;
-    NvU64                         allocFlags = MEMDESC_FLAGS_NONE;
     NV_STATUS                     status;
     CTX_BUF_POOL_INFO            *pCtxBufPool;
     const KGRAPHICS_STATIC_INFO  *pKernelGraphicsStaticInfo;
@@ -113,25 +124,12 @@ kgraphicsAllocGrGlobalCtxBuffers_GP100
         if (pCtxBuffers->bAllocated)
              return NV_OK;
 
-        // check for allocating local buffers in VPR memory (don't want for global memory)
-        if (
-            pKernelGraphicsContextUnicast->bVprChannel)
-            allocFlags |= MEMDESC_ALLOC_FLAGS_PROTECTED;
-
-        // If allocated per channel, ensure allocations goes into Suballocator if available
-        allocFlags |= MEMDESC_FLAGS_OWNED_BY_CURRENT_DEVICE;
     }
     else
     {
         pCtxBuffers = &pKernelGraphics->globalCtxBuffersInfo.pGlobalCtxBuffers[gfid];
         NV_ASSERT_OK_OR_RETURN(ctxBufPoolGetGlobalPool(pGpu, CTX_BUF_ID_GR_GLOBAL,
             RM_ENGINE_TYPE_GR(pKernelGraphics->instance), &pCtxBufPool));
-    }
-
-    // Don't use context buffer pool for VF allocations managed by host RM.
-    if (ctxBufPoolIsSupported(pGpu) && (pCtxBufPool != NULL))
-    {
-        allocFlags |= MEMDESC_FLAGS_OWNED_BY_CTX_BUF_POOL;
     }
 
     pKernelGraphicsStaticInfo = kgraphicsGetStaticInfo(pGpu, pKernelGraphics);
@@ -218,7 +216,13 @@ kgraphicsAllocGlobalCtxBuffers_GP100
         if ((*ppMemDesc)->_addressSpace == ADDR_FBMEM)
             memdescSetGpuCacheAttrib(*ppMemDesc, NV_MEMORY_CACHED);
 
-        NV_ASSERT_OK_OR_RETURN(memdescSetCtxBufPool(*ppMemDesc, pCtxBufPool));
+        if ((allocFlags & MEMDESC_FLAGS_OWNED_BY_CTX_BUF_POOL) != 0)
+        {
+            MemoryManager *pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+
+            memmgrSetMemDescPageSize_HAL(pGpu, pMemoryManager, *ppMemDesc, AT_GPU, RM_ATTR_PAGE_SIZE_4KB);
+            NV_ASSERT_OK_OR_RETURN(memdescSetCtxBufPool(*ppMemDesc, pCtxBufPool));
+        }
 
         NV_CHECK_OK_OR_RETURN(LEVEL_ERROR,
             memdescAllocList(*ppMemDesc, pCtxAttr[GR_GLOBALCTX_BUFFER_FECS_EVENT].pAllocList));

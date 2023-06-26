@@ -27,7 +27,7 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl2080/ctrl2080fifo.finn
+// Source file:      ctrl/ctrl2080/ctrl2080fifo.finn
 //
 
 #include "ctrl/ctrl2080/ctrl2080base.h"
@@ -213,10 +213,7 @@ typedef struct NV2080_CTRL_FIFO_GET_PHYSICAL_CHANNEL_COUNT_PARAMS {
  *     This index can be used too get channel groups currently in use per engine/runlist.
  *
  */
-typedef struct NV2080_CTRL_FIFO_INFO {
-    NvU32 index;
-    NvU32 data;
-} NV2080_CTRL_FIFO_INFO;
+typedef NVXXXX_CTRL_XXX_INFO NV2080_CTRL_FIFO_INFO;
 
 /* valid fifo info index values */
 #define NV2080_CTRL_FIFO_INFO_INDEX_INSTANCE_TOTAL                       (0x000000000)

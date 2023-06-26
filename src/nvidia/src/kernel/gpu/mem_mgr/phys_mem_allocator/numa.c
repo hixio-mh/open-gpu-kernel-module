@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2015-2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2015-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -47,7 +47,7 @@ static NV_STATUS _pmaNumaAvailableEvictableRange(PMA *pPma, NvS32 *validRegionLi
 static NV_STATUS _pmaNumaAllocateRange(PMA *pPma, NvU32 numaNodeId, NvLength actualSize,
     NvU64 pageSize, NvU64 *pPages, NvBool bScrubOnAlloc, NvBool allowEvict, NvS32 *validRegionList,
     NvU64 *allocatedCount);
-static NV_STATUS _pmaNumaAllocatePages (PMA *pPma, NvU32 numaNodeId, NvU32 pageSize,
+static NV_STATUS _pmaNumaAllocatePages (PMA *pPma, NvU32 numaNodeId, NvU64 pageSize,
     NvLength allocationCount, NvU64 *pPages, NvBool bScrubOnAlloc, NvBool allowEvict, NvS32 *validRegionList,
     NvU64 *allocatedPages);
 
@@ -163,7 +163,7 @@ NV_STATUS _pmaNumaAvailableEvictableRange
  */
 static NvBool _pmaCheckFreeFramesToSkipReclaim(PMA *pPma)
 {
-    return (100 * pPma->pmaStats.numFreeFrames < 
+    return (100 * pPma->pmaStats.numFreeFrames <
              (pPma->pmaStats.num2mbPages * (_PMA_2MB >> PMA_PAGE_SHIFT) * pPma->numaReclaimSkipThreshold));
 }
 
@@ -319,7 +319,7 @@ static NV_STATUS _pmaNumaAllocatePages
 (
     PMA     *pPma,
     NvU32    numaNodeId,
-    NvU32    pageSize,
+    NvU64    pageSize,
     NvLength allocationCount,
     NvU64   *pPages,
     NvBool   bScrubOnAlloc,
@@ -465,23 +465,24 @@ NV_STATUS pmaNumaAllocate
 (
     PMA                    *pPma,
     NvLength                allocationCount,
-    NvU32                   pageSize,
+    NvU64                   pageSize,
     PMA_ALLOCATION_OPTIONS *allocationOptions,
     NvU64                  *pPages
 )
 {
     NvU32    i;
-    NV_STATUS  status    = NV_OK;
-    NvU32    numaNodeId  = pPma->numaNodeId;
+    NV_STATUS  status     = NV_OK;
+    NvU32    numaNodeId   = pPma->numaNodeId;
     NvS32    regionList[PMA_REGION_SIZE];
-    NvU32    flags       = allocationOptions->flags;
-    NvLength allocSize   = 0;
-    NvLength allocCount  = 0;
-    NvU32    contigFlag  = !!(flags & PMA_ALLOCATE_CONTIGUOUS);
+    NvU32    flags        = allocationOptions->flags;
+    NvLength allocSize    = 0;
+    NvLength allocCount   = 0;
+    NvU32    contigFlag   = !!(flags & PMA_ALLOCATE_CONTIGUOUS);
     // As per bug #2444368, kernel scrubbing is too slow. Use the GPU scrubber instead
-    NvBool bScrubOnAlloc = !(flags & PMA_ALLOCATE_NO_ZERO);
-    NvBool    allowEvict = !(flags & PMA_ALLOCATE_DONT_EVICT);
-    NvBool   partialFlag = !!(flags & PMA_ALLOCATE_ALLOW_PARTIAL);
+    NvBool bScrubOnAlloc  = !(flags & PMA_ALLOCATE_NO_ZERO);
+    NvBool    allowEvict  = !(flags & PMA_ALLOCATE_DONT_EVICT);
+    NvBool   partialFlag  = !!(flags & PMA_ALLOCATE_ALLOW_PARTIAL);
+    NvBool bSkipScrubFlag = !!(flags & PMA_ALLOCATE_NO_ZERO);
 
     NvU64    finalAllocatedCount = 0;
 
@@ -492,9 +493,9 @@ NV_STATUS pmaNumaAllocate
         return NV_ERR_INVALID_ARGUMENT;
     }
 
-    if (pageSize > _PMA_2MB)
+    if (pageSize > _PMA_512MB)
     {
-        NV_PRINTF(LEVEL_FATAL, "Cannot allocate with more than 2MB contiguity.\n");
+        NV_PRINTF(LEVEL_FATAL, "Cannot allocate with more than 512MB contiguity.\n");
         return NV_ERR_INVALID_ARGUMENT;
     }
 
@@ -517,7 +518,13 @@ NV_STATUS pmaNumaAllocate
     // We are not changing the state. Can be outside the lock perhaps
     NV_CHECK_OK_OR_RETURN(LEVEL_FATAL, pmaSelector(pPma, allocationOptions, regionList));
 
-    if (pPma->bScrubOnFree)
+    //
+    // Scrub on free is enabled for this allocation request if the feature is enabled and the
+    // caller does not want to skip scrubber.
+    // Caller may want to skip scrubber when it knows the memory is zero'ed or when we are
+    // initializing RM structures needed by the scrubber itself.
+    //
+    if (pPma->bScrubOnFree && !bSkipScrubFlag)
     {
         portSyncMutexAcquire(pPma->pAllocLock);
         portSyncRwLockAcquireRead(pPma->pScrubberValidLock);
@@ -632,7 +639,7 @@ NV_STATUS pmaNumaAllocate
 
     portSyncSpinlockRelease(pPma->pPmaLock);
 
-    if (pPma->bScrubOnFree)
+    if (pPma->bScrubOnFree && !bSkipScrubFlag)
     {
         portSyncRwLockReleaseRead(pPma->pScrubberValidLock);
         portSyncMutexRelease(pPma->pAllocLock);

@@ -30,6 +30,9 @@
 *                                                                          *
 \***************************************************************************/
 
+// FIXME XXX
+#define NVOC_GPU_INSTANCE_SUBSCRIPTION_H_PRIVATE_ACCESS_ALLOWED
+
 #include "kernel/gpu/gr/kernel_graphics.h"
 #include "kernel/rmapi/event.h"
 #include "kernel/rmapi/event_buffer.h"
@@ -48,6 +51,9 @@
 #include "class/cl90cdtypes.h"
 #include "ctrl/ctrl90cd.h"
 
+#define NV_FECS_TRACE_MAX_TIMESTAMPS 5
+#define NV_FECS_TRACE_MAGIC_INVALIDATED 0xdededede         // magic number for entries that have been read
+
 typedef struct
 {
     NvU32 magic_lo;
@@ -56,11 +62,10 @@ typedef struct
     NvU32 context_ptr;
     NvU32 new_context_id;
     NvU32 new_context_ptr;
-    NvU64 ts[];
+    NvU64 ts[NV_FECS_TRACE_MAX_TIMESTAMPS];
+    NvU32 reserved[13];
+    NvU32 seqno;
 } FECS_EVENT_RECORD;
-
-#define NV_FECS_TRACE_MAX_TIMESTAMPS 5
-#define NV_FECS_TRACE_MAGIC_INVALIDATED 0xdededede         // magic number for entries that have been read
 
 /*! Opaque pointer to private data */
 typedef struct VGPU_FECS_TRACE_STAGING_BUFFER VGPU_FECS_TRACE_STAGING_BUFFER;
@@ -73,6 +78,7 @@ struct KGRAPHICS_FECS_TRACE_INFO
     NvU16  fecsTraceRdOffset;
     NvU16  fecsTraceCounter;
     NvU32  fecsCtxswLogIntrPending;
+    NvU32  fecsLastSeqno;
 
 #if PORT_IS_MODULE_SUPPORTED(crypto)
     PORT_CRYPTO_PRNG *pFecsLogPrng;
@@ -224,6 +230,19 @@ formatAndNotifyFecsRecord
     pChannelRef = (pKernelChannel != NULL) ? kchannelGetMIGReference(pKernelChannel) : NULL;
     pNewChannelRef = (pKernelChannelNew != NULL) ? kchannelGetMIGReference(pKernelChannelNew) : NULL;
 
+    if (kgraphicsIsFecsRecordUcodeSeqnoSupported(pGpu, pKernelGraphics))
+    {
+        KGRAPHICS_FECS_TRACE_INFO *pFecsTraceInfo = kgraphicsGetFecsTraceInfo(pGpu, pKernelGraphics);
+
+        // Dropped at least 1 event
+        if ((pFecsTraceInfo->fecsLastSeqno + 1) != pRecord->seqno)
+        {
+            notifRecord.dropCount = pRecord->seqno - pFecsTraceInfo->fecsLastSeqno - 1;
+        }
+
+        pFecsTraceInfo->fecsLastSeqno = pRecord->seqno;
+    }
+
     for (timestampId = 0; timestampId < NV_FECS_TRACE_MAX_TIMESTAMPS; timestampId++)
     {
         NV_ASSERT_OK_OR_ELSE(status,
@@ -345,6 +364,8 @@ formatAndNotifyFecsRecord
             pSubmap = multimapFindSubmap(&pGpu->fecsEventBufferBindingsUid, 0);
             notifyEventBuffers(pGpu, pSubmap, &notifRecord);
 
+            // Clear so we don't report drops for every event in this record
+            notifRecord.dropCount = 0;
         }
     }
 }
@@ -862,7 +883,7 @@ NV_STATUS
 fecsAddBindpoint
 (
     OBJGPU *pGpu,
-    RsClient *pClient,
+    RmClient *pClient,
     RsResourceRef *pEventBufferRef,
     NvHandle hNotifier,
     NvBool bAllUsers,
@@ -873,8 +894,7 @@ fecsAddBindpoint
 )
 {
     NV_STATUS status;
-    NvHandle hClient = pClient->hClient;
-    RmClient *pRmClient = dynamicCast(pClient, RmClient);
+    NvHandle hClient = staticCast(pClient, RsClient)->hClient;
     NvHandle hEventBuffer = pEventBufferRef->hResource;
     EventBuffer *pEventBuffer;
     NvBool bAdmin = osIsAdministrator();
@@ -959,7 +979,7 @@ fecsAddBindpoint
     }
     else
     {
-        targetUser = (NvU64)(NvUPtr)pRmClient->pUserInfo;
+        targetUser = (NvU64)(NvUPtr)pClient->pUserInfo;
 
         // Filtering UIDs is not yet implemented in legacy vGPU
         if (IS_VIRTUAL_WITHOUT_SRIOV(pGpu))
@@ -997,14 +1017,14 @@ fecsAddBindpoint
     pBind->hNotifier = hNotifier;
     pBind->hEventBuffer = hEventBuffer;
     pBind->pEventBuffer = pEventBuffer;
-    pBind->pUserInfo = (NvU64)(NvUPtr)pRmClient->pUserInfo;
+    pBind->pUserInfo = (NvU64)(NvUPtr)pClient->pUserInfo;
     pBind->bAdmin = bAdmin;
     pBind->eventMask = eventMask;
     pBind->bKernel = bKernel;
     pBind->version = version;
 
     status = registerEventNotification(&pEventBuffer->pListeners,
-                hClient,
+                staticCast(pClient, RsClient),
                 hNotifier,
                 hEventBuffer,
                 (version == 2 ?
@@ -1025,7 +1045,8 @@ fecsAddBindpoint
         else
         {
             GPUInstanceSubscription *pGPUInstanceSubscription;
-            status = gisubscriptionGetGPUInstanceSubscription(pClient, hNotifier, &pGPUInstanceSubscription);
+            status = gisubscriptionGetGPUInstanceSubscription(
+                    staticCast(pClient, RsClient), hNotifier, &pGPUInstanceSubscription);
             if (status != NV_OK)
                 goto done;
 
@@ -1233,6 +1254,8 @@ fecsBufferReset
         portMemSet(pFecsTraceInfo->pFecsBufferMapping,
                    (NvU8)(NV_FECS_TRACE_MAGIC_INVALIDATED & 0xff),
                    memdescGetSize(pFecsMemDesc));
+
+        pFecsTraceInfo->fecsLastSeqno = 0;
 
         // Routing info is the same for all future calls in this series
         traceWrOffsetParams.grRouteInfo = getHwEnableParams.grRouteInfo;

@@ -49,7 +49,7 @@
 #undef RPC_MESSAGE_STRUCTURES
 #undef RPC_MESSAGE_GENERIC_UNION
 
-void rpcRmApiSetup(OBJGPU *pGpu)
+static void rpcRmApiSetup(OBJGPU *pGpu)
 {
     //
     // Physical RMAPI is already initialized for monolithic, and this function
@@ -83,6 +83,8 @@ OBJRPC *initRpcObject(OBJGPU *pGpu)
                   gpuGetInstance(pGpu));
         return NULL;
     }
+    pRpc->timeoutCount = 0;
+    pRpc->bQuietPrints = NV_FALSE;
 
     // VIRTUALIZATION is disabled on DCE. Only run the below code on VGPU and GSP.
     rpcSetIpVersion(pGpu, pRpc,

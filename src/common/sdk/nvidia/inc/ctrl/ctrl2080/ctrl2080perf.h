@@ -27,7 +27,7 @@
 
 //
 // This file was generated with FINN, an NVIDIA coding tool.
-// Source file: ctrl/ctrl2080/ctrl2080perf.finn
+// Source file:      ctrl/ctrl2080/ctrl2080perf.finn
 //
 
 #include "nvfixedtypes.h"
@@ -347,23 +347,7 @@ typedef struct NV2080_CTRL_PERF_RATED_TDP_STATUS_PARAMS {
  *   NV_OK
  *   NV_ERR_NOT_SUPPORTED
  */
-#define NV2080_CTRL_CMD_PERF_RATED_TDP_GET_CONTROL (0x2080206e) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_PERF_INTERFACE_ID << 8) | 0x6E" */
-
-/*!
- * NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL
- *
- * This command sets the requested RATED_TDP action corresponding to the
- * specified client.  @Note, however, that this command is unable to set @ref
- * NV2080_CTRL_PERF_RATED_TDP_CLIENT_RM.
- *
- * See @ref NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS for documentation of
- * parameters.
- *
- * Possible status values returned are
- *   NV_OK
- *   NV_ERR_NOT_SUPPORTED
- */
-#define NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL (0x2080206f) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_PERF_INTERFACE_ID << 8) | 0x6F" */
+#define NV2080_CTRL_CMD_PERF_RATED_TDP_GET_CONTROL (0x2080206e) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_PERF_INTERFACE_ID << 8) | NV2080_CTRL_PERF_RATED_TDP_GET_CONTROL_PARAMS_MESSAGE_ID" */
 
 /*!
  * Structure containing the requested action for a RATED_TDP client (@ref
@@ -379,6 +363,30 @@ typedef struct NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS {
      */
     NV2080_CTRL_PERF_RATED_TDP_ACTION input;
 } NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS;
+
+#define NV2080_CTRL_PERF_RATED_TDP_GET_CONTROL_PARAMS_MESSAGE_ID (0x6EU)
+
+typedef NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS NV2080_CTRL_PERF_RATED_TDP_GET_CONTROL_PARAMS;
+
+/*!
+ * NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL
+ *
+ * This command sets the requested RATED_TDP action corresponding to the
+ * specified client.  @Note, however, that this command is unable to set @ref
+ * NV2080_CTRL_PERF_RATED_TDP_CLIENT_RM.
+ *
+ * See @ref NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS for documentation of
+ * parameters.
+ *
+ * Possible status values returned are
+ *   NV_OK
+ *   NV_ERR_NOT_SUPPORTED
+ */
+#define NV2080_CTRL_CMD_PERF_RATED_TDP_SET_CONTROL (0x2080206f) /* finn: Evaluated from "(FINN_NV20_SUBDEVICE_0_PERF_INTERFACE_ID << 8) | NV2080_CTRL_PERF_RATED_TDP_SET_CONTROL_PARAMS_MESSAGE_ID" */
+
+#define NV2080_CTRL_PERF_RATED_TDP_SET_CONTROL_PARAMS_MESSAGE_ID (0x6FU)
+
+typedef NV2080_CTRL_PERF_RATED_TDP_CONTROL_PARAMS NV2080_CTRL_PERF_RATED_TDP_SET_CONTROL_PARAMS;
 
 /*!
  * This struct represents the GPU monitoring perfmon sample for an engine.
@@ -452,7 +460,7 @@ typedef NV2080_CTRL_GPUMON_SAMPLES NV2080_CTRL_PERF_GET_GPUMON_PERFMON_UTIL_SAMP
 #define NV2080_CTRL_PERF_GPUMON_SAMPLE_COUNT_PERFMON_UTIL       72
 
 #define NV2080_CTRL_PERF_GPUMON_PERFMON_UTIL_BUFFER_SIZE           \
-    NV_SIZEOF32(NV2080_CTRL_PERF_GPUMON_PERFMON_UTIL_SAMPLE) *     \
+    sizeof(NV2080_CTRL_PERF_GPUMON_PERFMON_UTIL_SAMPLE) *          \
     NV2080_CTRL_PERF_GPUMON_SAMPLE_COUNT_PERFMON_UTIL
 
 /*!

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -179,20 +179,19 @@ kernelhostvgpudeviceapiCtrlCmdEventSetNotification_IMPL
 }
 
 NV_STATUS
-kernelhostvgpudeviceapiCtrlCmdSetSriovState_IMPL
+kernelhostvgpudeviceapiCtrlCmdGetBarMappingRanges_IMPL
 (
     KernelHostVgpuDeviceApi *pKernelHostVgpuDeviceApi,
-    NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_SRIOV_STATE_PARAMS *pSetSriovStateParams
+    NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_GET_BAR_MAPPING_RANGES_PARAMS *pParams
 )
 {
     return NV_ERR_NOT_SUPPORTED;
 }
 
 NV_STATUS
-kernelhostvgpudeviceapiCtrlCmdSetGuestId_IMPL
+kernelhostvgpudeviceapiCtrlCmdRestoreDefaultExecPartition_IMPL
 (
-    KernelHostVgpuDeviceApi *pKernelHostVgpuDeviceApi,
-    NVA084_CTRL_KERNEL_HOST_VGPU_DEVICE_SET_GUEST_ID_PARAMS *pParams
+    KernelHostVgpuDeviceApi *pKernelHostVgpuDeviceApi
 )
 {
     return NV_ERR_NOT_SUPPORTED;

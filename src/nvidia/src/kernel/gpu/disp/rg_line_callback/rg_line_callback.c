@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -55,6 +55,7 @@ _registerRgLineCallback
     status = dispapiSetUnicastAndSynchronize_HAL(staticCast(pRgLineCallback->pDispCommon, DisplayApi),
                                              DISPAPI_GET_GPUGRP(pRgLineCallback->pDispCommon),
                                              &pGpu,
+                                             NULL,
                                              pRgLineCallback->subDeviceInstance);
     if (status != NV_OK)
         return status;
@@ -96,11 +97,6 @@ rglcbConstruct_IMPL
 )
 {
     NV0092_RG_LINE_CALLBACK_ALLOCATION_PARAMETERS *pAllocParams = pParams->pAllocParams;
-
-    if (pCallContext->secInfo.privLevel < RS_PRIV_LEVEL_KERNEL)
-    {
-        return NV_ERR_INSUFFICIENT_PERMISSIONS;
-    }
 
     pRgLineCallback->subDeviceInstance = pAllocParams->subDeviceInstance;
     pRgLineCallback->head              = pAllocParams->head;

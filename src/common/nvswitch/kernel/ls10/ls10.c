@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,6 +27,7 @@
 #include "regkey_nvswitch.h"
 #include "haldef_nvswitch.h"
 #include "nvlink_inband_msg.h"
+#include "rmsoecmdif.h"
 
 #include "ls10/ls10.h"
 #include "lr10/lr10.h"
@@ -63,6 +64,8 @@
 #include "nvswitch/ls10/dev_multicasttstate_ip.h"
 #include "nvswitch/ls10/dev_reductiontstate_ip.h"
 #include "ls10/minion_nvlink_defines_public_ls10.h"
+#include "nvswitch/ls10/dev_pmgr.h"
+#include "nvswitch/ls10/dev_timer_ip.h"
 
 #define NVSWITCH_IFR_MIN_BIOS_VER_LS10      0x9610170000ull
 #define NVSWITCH_SMBPBI_MIN_BIOS_VER_LS10   0x9610220000ull
@@ -914,7 +917,7 @@ nvswitch_ctrl_get_sw_info_ls10
         switch (p->index[i])
         {
             case NVSWITCH_GET_SW_INFO_INDEX_INFOROM_NVL_SUPPORTED:
-                p->info[i] = NV_FALSE; //TODO: Enable once NVL support is present (CTK-4163)
+                p->info[i] = NV_TRUE;
                 break;
             case NVSWITCH_GET_SW_INFO_INDEX_INFOROM_BBX_SUPPORTED:
                 p->info[i] = NV_TRUE;
@@ -1103,10 +1106,17 @@ nvswitch_link_disable_interrupts_ls10
     instance     = link / NVSWITCH_LINKS_PER_NVLIPT_LS10;
     localLinkIdx = link % NVSWITCH_LINKS_PER_NVLIPT_LS10;
 
-    NVSWITCH_NPORT_WR32_LS10(device, link, _NPORT, _ERR_CONTROL_COMMON_NPORT,
-        DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _CORRECTABLEENABLE, 0x0) |
-        DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _FATALENABLE,       0x0) |
-        DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _NONFATALENABLE,    0x0));
+    if (nvswitch_is_soe_supported(device))
+    {
+        nvswitch_soe_set_nport_interrupts_ls10(device, link, NV_FALSE);
+    }
+    else
+    {
+        NVSWITCH_NPORT_WR32_LS10(device, link, _NPORT, _ERR_CONTROL_COMMON_NPORT,
+            DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _CORRECTABLEENABLE, 0x0) |
+            DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _FATALENABLE,       0x0) |
+            DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _NONFATALENABLE,    0x0));
+    }
 
     NVSWITCH_ENG_WR32(device, NVLW, , instance, _NVLW, _LINK_INTR_0_MASK(localLinkIdx),
         DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _FATAL,       0x0) |
@@ -1138,31 +1148,38 @@ _nvswitch_link_reset_interrupts_ls10
     NvU32 eng_instance = link / NVSWITCH_LINKS_PER_NVLIPT_LS10;
     NvU32 localLinkNum = link % NVSWITCH_LINKS_PER_NVLIPT_LS10;
 
-    NVSWITCH_NPORT_WR32_LS10(device, link, _NPORT, _ERR_CONTROL_COMMON_NPORT,
-        DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _CORRECTABLEENABLE, 0x1) |
-        DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _FATALENABLE, 0x1) |
-        DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _NONFATALENABLE, 0x1));
+    if (nvswitch_is_soe_supported(device))
+    {
+        nvswitch_soe_set_nport_interrupts_ls10(device, link, NV_TRUE);
+    }
+    else
+    {
+        NVSWITCH_NPORT_WR32_LS10(device, link, _NPORT, _ERR_CONTROL_COMMON_NPORT,
+            DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _CORRECTABLEENABLE, 0x1) |
+            DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _FATALENABLE, 0x1) |
+            DRF_NUM(_NPORT, _ERR_CONTROL_COMMON_NPORT, _NONFATALENABLE, 0x1));
+    }
 
-        NVSWITCH_ENG_WR32(device, NVLW, , eng_instance, _NVLW, _LINK_INTR_0_MASK(localLinkNum),
-            DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _FATAL, 0x1) |
-            DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _NONFATAL, 0x0) |
-            DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _CORRECTABLE, 0x0) |
-            DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR0,       0x1) |
-            DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR1,       0x0));
+    NVSWITCH_ENG_WR32(device, NVLW, , eng_instance, _NVLW, _LINK_INTR_0_MASK(localLinkNum),
+        DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _FATAL, 0x1) |
+        DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _NONFATAL, 0x0) |
+        DRF_NUM(_NVLW, _LINK_INTR_0_MASK, _CORRECTABLE, 0x0) |
+        DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR0,       0x1) |
+        DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR1,       0x0));
 
-        NVSWITCH_ENG_WR32(device, NVLW, , eng_instance, _NVLW, _LINK_INTR_1_MASK(localLinkNum),
-            DRF_NUM(_NVLW, _LINK_INTR_1_MASK, _FATAL, 0x0) |
-            DRF_NUM(_NVLW, _LINK_INTR_1_MASK, _NONFATAL, 0x1) |
-            DRF_NUM(_NVLW, _LINK_INTR_1_MASK, _CORRECTABLE, 0x1) |
-            DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR0,       0x0) |
-            DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR1,       0x1));
+    NVSWITCH_ENG_WR32(device, NVLW, , eng_instance, _NVLW, _LINK_INTR_1_MASK(localLinkNum),
+        DRF_NUM(_NVLW, _LINK_INTR_1_MASK, _FATAL, 0x0) |
+        DRF_NUM(_NVLW, _LINK_INTR_1_MASK, _NONFATAL, 0x1) |
+        DRF_NUM(_NVLW, _LINK_INTR_1_MASK, _CORRECTABLE, 0x1) |
+        DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR0,       0x0) |
+        DRF_NUM(_NVLW_LINK, _INTR_0_MASK, _INTR1,       0x1));
 
-        NVSWITCH_ENG_WR32(device, NVLW, , eng_instance, _NVLW, _LINK_INTR_2_MASK(localLinkNum),
-            DRF_NUM(_NVLW, _LINK_INTR_2_MASK, _FATAL, 0x0) |
-            DRF_NUM(_NVLW, _LINK_INTR_2_MASK, _NONFATAL, 0x0) |
-            DRF_NUM(_NVLW, _LINK_INTR_2_MASK, _CORRECTABLE, 0x0) |
-            DRF_NUM(_NVLW_LINK, _INTR_2_MASK, _INTR0,       0x0) |
-            DRF_NUM(_NVLW_LINK, _INTR_2_MASK, _INTR1,       0x0));
+    NVSWITCH_ENG_WR32(device, NVLW, , eng_instance, _NVLW, _LINK_INTR_2_MASK(localLinkNum),
+        DRF_NUM(_NVLW, _LINK_INTR_2_MASK, _FATAL, 0x0) |
+        DRF_NUM(_NVLW, _LINK_INTR_2_MASK, _NONFATAL, 0x0) |
+        DRF_NUM(_NVLW, _LINK_INTR_2_MASK, _CORRECTABLE, 0x0) |
+        DRF_NUM(_NVLW_LINK, _INTR_2_MASK, _INTR0,       0x0) |
+        DRF_NUM(_NVLW_LINK, _INTR_2_MASK, _INTR1,       0x0));
 
     // NVLIPT_LNK
     regval = NVSWITCH_LINK_RD32_LS10(device, link, NVLIPT_LNK, _NVLIPT_LNK, _INTR_CONTROL_LINK);
@@ -1357,6 +1374,11 @@ nvswitch_reset_and_drain_links_ls10
     NvU32 link_state;
     NvU32 stat_data;
     NvU32 link_intr_subcode;
+    NvBool bKeepPolling;
+    NvBool bIsLinkInEmergencyShutdown;
+    NvBool bAreDlClocksOn;
+    NVSWITCH_TIMEOUT timeout;
+
 
     if (link_mask == 0)
     {
@@ -1425,10 +1447,9 @@ nvswitch_reset_and_drain_links_ls10
             if (status != NVL_SUCCESS)
             {
                 nvswitch_destroy_link(link_info);
-                return status;
             }
 
-            return -NVL_ERR_INVALID_STATE;
+            continue;
         }
 
         //
@@ -1438,10 +1459,42 @@ nvswitch_reset_and_drain_links_ls10
 
         //
         // Step 3.0 :
-        // Prior to starting port reset, perform unilateral shutdown on the
-        // LS10 side of the link, in case the links are not shutdown.
+        // Prior to starting port reset, ensure the links is in emergency shutdown
         //
-        nvswitch_execute_unilateral_link_shutdown_ls10(link_info);
+        bIsLinkInEmergencyShutdown = NV_FALSE;
+        nvswitch_timeout_create(10 * NVSWITCH_INTERVAL_1MSEC_IN_NS, &timeout);
+        do
+        {
+            bKeepPolling = (nvswitch_timeout_check(&timeout)) ? NV_FALSE : NV_TRUE;
+
+            status = nvswitch_minion_get_dl_status(device, link_info->linkNumber,
+                        NV_NVLSTAT_UC01, 0, &stat_data);
+
+            if (status != NVL_SUCCESS)
+            {
+                continue;
+            }
+
+            link_state = DRF_VAL(_NVLSTAT, _UC01, _LINK_STATE, stat_data);
+
+            bIsLinkInEmergencyShutdown = (link_state == LINKSTATUS_EMERGENCY_SHUTDOWN) ?
+                                            NV_TRUE:NV_FALSE;
+
+            if (bIsLinkInEmergencyShutdown == NV_TRUE)
+            {
+                break;
+            }
+        }
+        while(bKeepPolling);
+
+        if (bIsLinkInEmergencyShutdown == NV_FALSE)
+        {
+            NVSWITCH_PRINT(device, ERROR,
+                "%s: link %d failed to enter emergency shutdown\n",
+                __FUNCTION__, link);
+            continue;
+        }
+
         nvswitch_corelib_clear_link_state_ls10(link_info);
 
         //
@@ -1452,7 +1505,7 @@ nvswitch_reset_and_drain_links_ls10
         //   DEBUG_CLEAR (0x144) register
         // - Assert NPortWarmReset[i] using the WARMRESET (0x140) register
         //
-        // nvswitch_soe_issue_nport_reset_ls10(device, link);
+        nvswitch_soe_issue_nport_reset_ls10(device, link);
 
         //
         // Step 5.0 : Issue Minion request to perform the link reset sequence
@@ -1482,6 +1535,10 @@ nvswitch_reset_and_drain_links_ls10
                                   NV_NVLSTAT_MN00, 0, &stat_data) == NVL_SUCCESS)
                 {
                     link_intr_subcode = DRF_VAL(_NVLSTAT, _MN00, _LINK_INTR_SUBCODE, stat_data);
+                }
+                else
+                {
+                    continue;
                 }
 
                 if ((link_state == NV_NVLIPT_LNK_CTRL_LINK_STATE_REQUEST_STATUS_MINION_REQUEST_FAIL) &&
@@ -1515,9 +1572,8 @@ nvswitch_reset_and_drain_links_ls10
             if (status != NVL_SUCCESS)
             {
                 nvswitch_destroy_link(link_info);
-                return status;
             }
-            return status;
+            continue;
         }
 
         //
@@ -1527,7 +1583,7 @@ nvswitch_reset_and_drain_links_ls10
         // - Assert NPORT INITIALIZATION and program the state tracking RAMS
         // - Restore NPORT state after reset
         //
-        // nvswitch_soe_restore_nport_state_ls10(device, link);
+        nvswitch_soe_restore_nport_state_ls10(device, link);
 
         // Step 7.0 : Re-program the routing table for DBEs
   
@@ -1538,12 +1594,15 @@ nvswitch_reset_and_drain_links_ls10
         status = nvlink_lib_register_link(device->nvlink_device, link_info);
         if (status != NVL_SUCCESS)
         {
+            NVSWITCH_PRINT(device, ERROR,
+                "%s: Failed to register link: 0x%x with the corelib\n",
+                __FUNCTION__, link);
             nvswitch_destroy_link(link_info);
-            return status;
+            continue;
         }
 
         //
-        // Launch ALI training to re-initialize and train the links
+        // Step 9.0: Launch ALI training to re-initialize and train the links
         // nvswitch_launch_ALI_link_training(device, link_info);
         //
         // Request active, but don't block. FM will come back and check
@@ -1558,7 +1617,44 @@ nvswitch_reset_and_drain_links_ls10
             NVSWITCH_PRINT(device, ERROR,
                 "%s: TL link state request to active for ALI failed for link: 0x%x\n",
                 __FUNCTION__, link);
+            continue;
         }
+
+        bAreDlClocksOn = NV_FALSE;
+        nvswitch_timeout_create(NVSWITCH_INTERVAL_1MSEC_IN_NS, &timeout);
+        do
+        {
+            bKeepPolling = (nvswitch_timeout_check(&timeout)) ? NV_FALSE : NV_TRUE;
+
+            status = nvswitch_minion_get_dl_status(device, link_info->linkNumber,
+                        NV_NVLSTAT_UC01, 0, &stat_data);
+
+            if (status != NVL_SUCCESS)
+            {
+                continue;
+            }
+
+            link_state = DRF_VAL(_NVLSTAT, _UC01, _LINK_STATE, stat_data);
+
+            bAreDlClocksOn = (link_state != LINKSTATUS_INITPHASE1) ?
+                                            NV_TRUE:NV_FALSE;
+
+            if (bAreDlClocksOn == NV_TRUE)
+            {
+                break;
+            }
+        }
+        while(bKeepPolling);
+
+        if (!bAreDlClocksOn)
+        {
+            NVSWITCH_PRINT(device, ERROR,
+                "%s: link: 0x%x doesn't have the TX/RX clocks on, skipping setting DL interrupts!\n",
+                __FUNCTION__, link);
+            continue;
+        }
+
+        nvswitch_set_dlpl_interrupts_ls10(link_info);
     }
     FOR_EACH_INDEX_IN_MASK_END;
 
@@ -2574,7 +2670,6 @@ nvswitch_get_nvlink_ecc_errors_ls10
         NvU32               sublinkWidth;
 
         link = nvswitch_get_link(device, i);
-        sublinkWidth = device->hal.nvswitch_get_sublink_width(device, i);
 
         if ((link == NULL) ||
             !NVSWITCH_IS_LINK_ENG_VALID_LS10(device, NVLDL, link->linkNumber) ||
@@ -2582,6 +2677,8 @@ nvswitch_get_nvlink_ecc_errors_ls10
         {
             return -NVL_BAD_ARGS;
         }
+
+        sublinkWidth = device->hal.nvswitch_get_sublink_width(device, i);
 
         minion_enabled = nvswitch_is_minion_initialized(device,
             NVSWITCH_GET_LINK_ENG_INST(device, link->linkNumber, MINION));
@@ -2647,6 +2744,56 @@ nvswitch_get_num_links_ls10
     return NVSWITCH_NUM_LINKS_LS10;
 }
 
+static NvU8
+nvswitch_get_num_links_per_nvlipt_ls10
+(
+    nvswitch_device *device
+)
+{
+    return NVSWITCH_LINKS_PER_NVLIPT_LS10;
+}
+
+
+NvlStatus
+nvswitch_ctrl_get_fom_values_ls10
+(
+    nvswitch_device *device,
+    NVSWITCH_GET_FOM_VALUES_PARAMS *p
+)
+{
+    NvlStatus status;
+    NvU32     statData;
+    nvlink_link *link;
+
+    link = nvswitch_get_link(device, p->linkId);
+    if (link == NULL)
+    {
+        NVSWITCH_PRINT(device, ERROR, "%s: link #%d invalid\n",
+            __FUNCTION__, p->linkId);
+        return -NVL_BAD_ARGS;
+    }
+
+    if (nvswitch_is_link_in_reset(device, link))
+    {
+        NVSWITCH_PRINT(device, ERROR, "%s: link #%d is in reset\n",
+            __FUNCTION__, p->linkId);
+        return -NVL_ERR_INVALID_STATE;
+    }
+
+    status = nvswitch_minion_get_dl_status(device, p->linkId,
+                                        NV_NVLSTAT_TR16, 0, &statData);
+    p->figureOfMeritValues[0] = (NvU16) (statData & 0xFFFF);
+    p->figureOfMeritValues[1] = (NvU16) ((statData >> 16) & 0xFFFF);
+
+    status = nvswitch_minion_get_dl_status(device, p->linkId,
+                                        NV_NVLSTAT_TR17, 0, &statData);
+    p->figureOfMeritValues[2] = (NvU16) (statData & 0xFFFF);
+    p->figureOfMeritValues[3] = (NvU16) ((statData >> 16) & 0xFFFF);
+
+    p->numLanes = nvswitch_get_sublink_width(device, p->linkId);
+
+    return status;
+}
 
 void
 nvswitch_set_fatal_error_ls10
@@ -2838,6 +2985,41 @@ nvswitch_is_spi_supported_ls10
     return NV_FALSE;
 }
 
+NvBool
+nvswitch_is_bios_supported_ls10
+(
+    nvswitch_device *device
+)
+{
+    if (IS_RTLSIM(device) || IS_EMULATION(device) || IS_FMODEL(device))
+    {
+        NVSWITCH_PRINT(device, INFO,
+            "BIOS is not supported on non-silicon platforms\n");
+        return NV_FALSE;
+    }
+
+    if (!nvswitch_is_soe_supported(device))
+    {
+        NVSWITCH_PRINT(device, INFO,
+            "BIOS is not supported since SOE is not supported\n");
+        return NV_FALSE;
+    }
+
+    return NV_TRUE;
+}
+
+NvlStatus
+nvswitch_get_bios_size_ls10
+(
+    nvswitch_device *device,
+    NvU32 *pSize
+)
+{
+    *pSize = SOE_CORE_BIOS_SIZE_LS10;
+
+    return NVL_SUCCESS;
+}
+
 /*
  * @Brief : Check if SMBPBI is supported
  *
@@ -2906,8 +3088,17 @@ NvlStatus nvswitch_get_link_public_id_ls10
     NvU32 *publicId
 )
 {
-    NVSWITCH_PRINT(device, WARN, "%s: Function not implemented\n", __FUNCTION__);
-    return -NVL_ERR_NOT_IMPLEMENTED;
+    if (!device->hal.nvswitch_is_link_valid(device, linkId) ||
+        (publicId == NULL))
+    {
+        return -NVL_BAD_ARGS;
+    }
+
+    *publicId = NVSWITCH_NVLIPT_GET_PUBLIC_ID_LS10(linkId);
+
+
+    return (NVSWITCH_ENG_VALID_LS10(device, NVLIPT, *publicId)) ?
+                NVL_SUCCESS : -NVL_BAD_ARGS;
 }
 
 /*
@@ -5338,7 +5529,7 @@ nvswitch_ctrl_get_board_part_number_ls10
     if (!pInforom->OBD.bValid)
     {
         NVSWITCH_PRINT(device, ERROR, "OBD data is not available\n");
-        return -NVL_ERR_GENERIC;
+        return -NVL_ERR_NOT_SUPPORTED;
     }
 
     pOBDObj = &pInforom->OBD.object.v2;
@@ -5567,7 +5758,7 @@ nvswitch_ctrl_set_nvlink_error_threshold_ls10
 
             // Configure the interrupt
             nvswitch_configure_error_rate_threshold_interrupt_ls10(link,
-                                                                   link->errorThreshold.bInterruptEn);
+                                            pParams->errorThreshold[link->linkNumber].bInterruptEn);
         }
     }
     FOR_EACH_INDEX_IN_MASK_END;
@@ -5592,6 +5783,9 @@ nvswitch_ctrl_get_nvlink_error_threshold_ls10
         {
             continue;
         }
+
+        // Get the Error threshold
+        nvswitch_get_error_rate_threshold_ls10(link);
 
         pParams->errorThreshold[link->linkNumber].thresholdMan =
             link->errorThreshold.thresholdMan;

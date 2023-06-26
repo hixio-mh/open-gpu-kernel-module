@@ -39,6 +39,7 @@
 namespace DisplayPort
 {
     #define PREDEFINED_DSC_MST_BPPX16 160;
+    #define MAX_DSC_COMPRESSION_BPPX16 128;
     #define HDCP_BCAPS_DDC_OFFSET 0x40
     #define HDCP_BCAPS_DDC_EN_BIT 0x80
     #define HDCP_BCAPS_DP_EN_BIT  0x01
@@ -76,7 +77,7 @@ namespace DisplayPort
         {
             struct _Enum_Path
             {
-                unsigned total, free;
+                unsigned availableStreams, total, free;
                 bool     bPathFECCapable;
                 bool     dataValid;                     // Is the cache valid?
             } enum_path;
@@ -167,7 +168,7 @@ namespace DisplayPort
         NvU8    rawDscCaps[16];
         DscCaps dscCaps;
 
-        // Panel replay Caps 
+        // Panel replay Caps
         PanelReplayCaps prCaps;
 
         bool bIsFakedMuxDevice;
@@ -195,6 +196,7 @@ namespace DisplayPort
         bool bFECParitySupported;
 
         TriState bSdpExtCapable;
+        TriState bAsyncSDPCapable;
         bool bMSAOverMSTCapable;
         bool bDscPassThroughColorFormatWar;
 
@@ -380,6 +382,7 @@ namespace DisplayPort
         virtual void queryGUID2();
 
         virtual bool getSDPExtnForColorimetrySupported();
+        virtual bool getAsyncSDPSupported();
 
         virtual bool getPanelFwRevision(NvU16 *revision);
 
@@ -447,6 +450,7 @@ namespace DisplayPort
         bool getFECSupport();
         NvBool isDSCPassThroughSupported();
         NvBool isDSCSupported();
+        NvBool isDSCDecompressionSupported();
         NvBool isDSCPossible();
         bool isFECSupported();
         bool readAndParseDSCCaps();

@@ -46,7 +46,6 @@
  * @brief
  *     This routine provides common allocation services used by the
  *     following heap allocation functions:
- *       NVOS32_FUNCTION_ALLOC_DEPTH_WIDTH_HEIGHT
  *       NVOS32_FUNCTION_ALLOC_SIZE
  *       NVOS32_FUNCTION_ALLOC_SIZE_RANGE
  *       NVOS32_FUNCTION_ALLOC_TILED_PITCH_HEIGHT
@@ -209,6 +208,15 @@ sysmemConstruct_IMPL
         memdescSetFlag(pMemDesc, MEMDESC_FLAGS_MEMORY_TYPE_DISPLAY_NISO, NV_TRUE);
 
     memdescSetFlag(pMemDesc, MEMDESC_FLAGS_SYSMEM_OWNED_BY_CLIENT, NV_TRUE);
+
+    if ((sysGetStaticConfig(SYS_GET_INSTANCE()))->bOsSevEnabled &&
+        gpuIsCCorApmFeatureEnabled(pGpu) &&
+        FLD_TEST_DRF(OS32, _ATTR2, _MEMORY_PROTECTION, _UNPROTECTED,
+                     pAllocData->attr2))
+        {
+            memdescSetFlag(pMemDesc, MEMDESC_FLAGS_ALLOC_IN_UNPROTECTED_MEMORY,
+                           NV_TRUE);
+        }
 
     memdescSetGpuCacheAttrib(pMemDesc, gpuCacheAttrib);
 
@@ -477,7 +485,7 @@ sysmemAllocResources
     // While replaying a trace, it is possible for the playback OS to have a smaller page size
     // than the capture OS so if we're running a replay where the requested page size is larger,
     // assume this is a contiguous piece of memory, if contiguity is not specified.
-    // 
+    //
     if (FLD_TEST_DRF(OS32, _ATTR, _PHYSICALITY, _DEFAULT, pVidHeapAlloc->attr))
     {
         if ((FLD_TEST_DRF(OS32, _ATTR, _PAGE_SIZE, _BIG, pVidHeapAlloc->attr) ||

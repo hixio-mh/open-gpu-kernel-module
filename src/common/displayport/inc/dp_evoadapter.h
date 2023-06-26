@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 1993-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 1993-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -160,6 +160,7 @@ namespace DisplayPort
         bool _applyLinkBwOverrideWarRegVal;
         bool _isDynamicMuxCapable;
         bool _enableMSAOverrideOverMST;
+        bool _enableFecCheckForDDS;
 
         bool _isLTPhyRepeaterSupported;
         //
@@ -182,8 +183,8 @@ namespace DisplayPort
         }_DSC;
 
     private:
-        virtual void initializeRegkeyDatabase();
-        virtual void applyRegkeyOverrides();
+        void initializeRegkeyDatabase();
+        void applyRegkeyOverrides();
 
     public:
         EvoMainLink(EvoInterface * provider, Timer * timer);

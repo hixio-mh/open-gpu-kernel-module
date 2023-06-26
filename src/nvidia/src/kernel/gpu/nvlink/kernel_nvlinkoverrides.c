@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -20,6 +20,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
+#define NVOC_KERNEL_NVLINK_H_PRIVATE_ACCESS_ALLOWED
 
 #include "kernel/gpu/nvlink/kernel_nvlink.h"
 #include "kernel/gpu/nvlink/kernel_ioctrl.h"
@@ -59,7 +61,6 @@ knvlinkApplyRegkeyOverrides_IMPL
     pKernelNvlink->nvlinkLinkSpeed = NV_REG_STR_RM_NVLINK_SPEED_CONTROL_SPEED_DEFAULT;
 
     // Power management settings
-    pKernelNvlink->bDisableSingleLaneMode = NV_FALSE;
     pKernelNvlink->bDisableL2Mode         = NV_FALSE;
 
     // Debug Settings
@@ -224,15 +225,6 @@ knvlinkApplyRegkeyOverrides_IMPL
                          NV_REG_STR_RM_NVLINK_LINK_PM_CONTROL, &regdata))
     {
         NV_PRINTF(LEVEL_INFO, "RM NVLink Link PM controlled via regkey\n");
-
-        // Whether one-eighth mode has been disabled by regkey
-        if (FLD_TEST_DRF(_REG_STR_RM, _NVLINK_LINK_PM_CONTROL, _SINGLE_LANE_MODE,
-                        _DISABLE, regdata))
-        {
-            NV_PRINTF(LEVEL_INFO,
-                      "NVLink single-lane power state disabled via regkey\n");
-            pKernelNvlink->bDisableSingleLaneMode = NV_TRUE;
-        }
 
         // Whether L2 power state has been disabled by regkey
         if (FLD_TEST_DRF(_REG_STR_RM, _NVLINK_LINK_PM_CONTROL, _L2_MODE,

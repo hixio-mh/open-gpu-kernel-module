@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -857,7 +857,7 @@ memCopyConstruct_IMPL
     }
 
     NV_CHECK_OK_OR_GOTO(status, LEVEL_ERROR,
-                        memCheckCopyPermissions(pMemorySrc, pDstGpu, pDstClient->hClient), done);
+                        memCheckCopyPermissions(pMemorySrc, pDstGpu, pDstDevice), done);
 
     // Initialize Memory
     pMemoryDst->categoryClassId = pMemorySrc->categoryClassId;
